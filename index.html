@@ -50,6 +50,7 @@
         .status.online { background: #d1fae5; color: #065f46; }
         .status.offline { background: #fee2e2; color: #991b1b; }
         .status.calling { background: #dbeafe; color: #1e40af; }
+        .status.warning { background: #fef3c7; color: #92400e; }
         
         .my-id {
             background: white;
@@ -147,6 +148,33 @@
             font-weight: bold;
         }
         
+        .unmute-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 100;
+        }
+        
+        .unmute-overlay h2 {
+            color: white;
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+        
+        .unmute-overlay p {
+            color: white;
+            font-size: 1.3em;
+            text-align: center;
+        }
+        
         .screen {
             display: none;
         }
@@ -199,6 +227,18 @@
         
         .call-buttons button {
             margin: 0;
+        }
+        
+        .debug {
+            background: #1a1a1a;
+            color: #0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 0.9em;
+            max-height: 150px;
+            overflow-y: auto;
         }
         
         @media (min-width: 768px) {
@@ -261,6 +301,8 @@
                     <div class="video-label">Du</div>
                 </div>
             </div>
+            
+            <div class="debug" id="debug">Debug Log:</div>
         </div>
     </div>
 
@@ -269,6 +311,17 @@
         let myStream = null;
         let currentCall = null;
         let incomingCall = null;
+        let remoteAudioElement = null;
+
+        function log(msg) {
+            const debug = document.getElementById('debug');
+            if (debug) {
+                const time = new Date().toLocaleTimeString();
+                debug.innerHTML += `<div>[${time}] ${msg}</div>`;
+                debug.scrollTop = debug.scrollHeight;
+            }
+            console.log(msg);
+        }
 
         async function start() {
             const name = document.getElementById('myName').value.trim();
@@ -279,43 +332,44 @@
             }
 
             try {
-                // 1. Kamera-Zugriff
-                console.log('Fordere Medien an...');
+                log('Fordere Medien an...');
                 myStream = await navigator.mediaDevices.getUserMedia({ 
                     video: true, 
-                    audio: true 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
                 });
                 
-                console.log('✓ Stream erhalten:', myStream.getTracks().map(t => t.kind));
+                log('✓ Stream: ' + myStream.getTracks().map(t => t.kind + ':' + t.label).join(', '));
                 
-                // 2. Zeige eigenes Video
                 document.getElementById('myVideo').srcObject = myStream;
                 
-                // 3. PeerJS initialisieren
-                console.log('Initialisiere Peer...');
+                log('Initialisiere Peer...');
                 peer = new Peer(name);
                 
                 peer.on('open', (id) => {
-                    console.log('✓ Peer ID:', id);
+                    log('✓ Peer ID: ' + id);
                     document.getElementById('myId').textContent = id;
                     document.getElementById('setupScreen').classList.remove('active');
                     document.getElementById('chatScreen').classList.add('active');
                 });
 
                 peer.on('call', (call) => {
-                    console.log('📞 Eingehender Anruf von:', call.peer);
+                    log('📞 Eingehender Anruf von: ' + call.peer);
                     incomingCall = call;
                     document.getElementById('callerName').textContent = call.peer;
                     document.getElementById('callOverlay').classList.add('active');
                 });
 
                 peer.on('error', (err) => {
-                    console.error('Peer Error:', err);
+                    log('❌ Peer Error: ' + err.type);
                     alert('Fehler: ' + (err.type === 'unavailable-id' ? 'Name schon vergeben!' : err.type));
                 });
                 
             } catch (err) {
-                console.error('Media Error:', err);
+                log('❌ Media Error: ' + err.message);
                 alert('Fehler beim Zugriff auf Kamera/Mikrofon!');
             }
         }
@@ -328,83 +382,60 @@
                 return;
             }
 
-            console.log('Rufe an:', friendName);
+            log('Rufe an: ' + friendName);
             document.getElementById('status').textContent = 'Rufe ' + friendName + ' an...';
             document.getElementById('status').className = 'status calling';
             
-            // Anruf starten
             currentCall = peer.call(friendName, myStream);
             
             if (!currentCall) {
+                log('❌ Anruf fehlgeschlagen');
                 alert('Anruf fehlgeschlagen!');
                 return;
             }
 
-            console.log('✓ Anruf gestartet');
-
-            currentCall.on('stream', (remoteStream) => {
-                console.log('✓ Remote Stream empfangen:', remoteStream.getTracks().map(t => t.kind));
-                addRemoteVideo(friendName, remoteStream);
-                document.getElementById('status').textContent = 'Verbunden mit ' + friendName;
-                document.getElementById('status').className = 'status online';
-                document.getElementById('callBtn').style.display = 'none';
-                document.getElementById('hangupBtn').style.display = 'block';
-            });
-
-            currentCall.on('close', () => {
-                console.log('Anruf beendet');
-                removeRemoteVideo();
-                resetUI();
-            });
-
-            currentCall.on('error', (err) => {
-                console.error('Call Error:', err);
-                alert('Fehler beim Anruf: ' + err);
-                resetUI();
-            });
+            log('✓ Anruf gestartet');
+            setupCallHandlers(friendName);
         }
 
         function acceptCall() {
-            console.log('Nehme Anruf an...');
+            log('Nehme Anruf an...');
             document.getElementById('callOverlay').classList.remove('active');
             
             if (!incomingCall) return;
 
-            // Anruf beantworten
             currentCall = incomingCall;
             incomingCall = null;
             
             currentCall.answer(myStream);
-            console.log('✓ Anruf beantwortet');
+            log('✓ Anruf beantwortet');
+            
+            setupCallHandlers(currentCall.peer);
+        }
 
+        function setupCallHandlers(name) {
             currentCall.on('stream', (remoteStream) => {
-                console.log('✓ Remote Stream empfangen:', remoteStream.getTracks().map(t => t.kind));
-                addRemoteVideo(currentCall.peer, remoteStream);
-                document.getElementById('status').textContent = 'Verbunden mit ' + currentCall.peer;
-                document.getElementById('callBtn').style.display = 'none';
-                document.getElementById('hangupBtn').style.display = 'block';
+                log('✓ Remote Stream: ' + remoteStream.getTracks().map(t => t.kind + ':' + t.enabled).join(', '));
+                
+                // METHODE 1: Video Element
+                addRemoteVideo(name, remoteStream);
+                
+                // METHODE 2: Separates Audio Element (BACKUP)
+                createAudioElement(remoteStream);
             });
 
             currentCall.on('close', () => {
-                console.log('Anruf beendet');
+                log('Anruf beendet');
                 removeRemoteVideo();
+                destroyAudioElement();
                 resetUI();
             });
-        }
 
-        function rejectCall() {
-            console.log('Anruf abgelehnt');
-            document.getElementById('callOverlay').classList.remove('active');
-            incomingCall = null;
-        }
-
-        function hangup() {
-            if (currentCall) {
-                currentCall.close();
-                currentCall = null;
-            }
-            removeRemoteVideo();
-            resetUI();
+            currentCall.on('error', (err) => {
+                log('❌ Call Error: ' + err);
+                alert('Fehler beim Anruf');
+                resetUI();
+            });
         }
 
         function addRemoteVideo(name, stream) {
@@ -416,11 +447,10 @@
             box.id = 'remoteVideo';
             
             const video = document.createElement('video');
+            video.id = 'remoteVideoElement';
             video.autoplay = true;
             video.playsinline = true;
             video.srcObject = stream;
-            
-            // KRITISCH: Audio aktivieren!
             video.muted = false;
             video.volume = 1.0;
             
@@ -430,22 +460,96 @@
             
             box.appendChild(video);
             box.appendChild(label);
+            
+            // Unmute Overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'unmute-overlay';
+            overlay.innerHTML = `
+                <h2>🔊</h2>
+                <p>HIER KLICKEN<br>FÜR TON!</p>
+            `;
+            overlay.onclick = () => {
+                log('User Interaktion - starte Audio...');
+                video.muted = false;
+                video.volume = 1.0;
+                video.play().then(() => {
+                    log('✓ Video spielt mit Audio');
+                    overlay.remove();
+                    document.getElementById('status').textContent = 'Verbunden mit ' + name + ' 🔊';
+                    document.getElementById('status').className = 'status online';
+                }).catch(err => {
+                    log('❌ Play Error: ' + err.message);
+                });
+                
+                // Audio Element auch aktivieren
+                if (remoteAudioElement) {
+                    remoteAudioElement.play().then(() => {
+                        log('✓ Audio Element spielt');
+                    }).catch(err => {
+                        log('❌ Audio Play Error: ' + err.message);
+                    });
+                }
+            };
+            
+            box.appendChild(overlay);
             grid.appendChild(box);
             
-            // Force play
+            document.getElementById('callBtn').style.display = 'none';
+            document.getElementById('hangupBtn').style.display = 'block';
+            document.getElementById('status').textContent = 'KLICKE AUF DAS VIDEO FÜR TON!';
+            document.getElementById('status').className = 'status warning';
+            
+            // Auto-play versuchen (wird wahrscheinlich blockiert)
             video.play().then(() => {
-                console.log('✓ Remote Video spielt');
-            }).catch((err) => {
-                console.warn('Autoplay blockiert:', err);
-                // User-Interaktion erforderlich
-                box.addEventListener('click', () => {
-                    video.play();
-                    video.muted = false;
-                }, { once: true });
-                box.style.cursor = 'pointer';
-                box.style.border = '3px solid red';
-                label.textContent = name + ' - Klicken für Ton!';
+                log('✓ Auto-play erfolgreich');
+                overlay.remove();
+                document.getElementById('status').textContent = 'Verbunden mit ' + name;
+                document.getElementById('status').className = 'status online';
+            }).catch(err => {
+                log('⚠ Auto-play blockiert (erwartet): ' + err.name);
             });
+        }
+
+        // BACKUP: Separates Audio Element
+        function createAudioElement(stream) {
+            destroyAudioElement();
+            
+            log('Erstelle Audio Element...');
+            remoteAudioElement = document.createElement('audio');
+            remoteAudioElement.autoplay = true;
+            remoteAudioElement.srcObject = stream;
+            remoteAudioElement.volume = 1.0;
+            
+            // Versuche zu spielen
+            remoteAudioElement.play().then(() => {
+                log('✓ Audio Element spielt');
+            }).catch(err => {
+                log('⚠ Audio Element blockiert: ' + err.name);
+            });
+        }
+
+        function destroyAudioElement() {
+            if (remoteAudioElement) {
+                remoteAudioElement.srcObject = null;
+                remoteAudioElement = null;
+                log('Audio Element entfernt');
+            }
+        }
+
+        function rejectCall() {
+            log('Anruf abgelehnt');
+            document.getElementById('callOverlay').classList.remove('active');
+            incomingCall = null;
+        }
+
+        function hangup() {
+            if (currentCall) {
+                currentCall.close();
+                currentCall = null;
+            }
+            removeRemoteVideo();
+            destroyAudioElement();
+            resetUI();
         }
 
         function removeRemoteVideo() {

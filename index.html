@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Chat mit Adressbuch & Gruppe</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-top: 0;
+        }
+        
+        .screen {
+            display: none;
+        }
+        
+        .screen.active {
+            display: block;
+        }
+        
+        /* Two Column Layout */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+        
+        .sidebar {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .main-content {
+            min-height: 400px;
+        }
+        
+        /* Contacts */
+        .contacts-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .contacts-header h3 {
+            margin: 0;
+        }
+        
+        .add-contact-btn {
+            padding: 6px 12px;
+            font-size: 0.9em;
+            background: #28a745;
+        }
+        
+        .contact-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .contact-item {
+            background: white;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 5px;
+            border: 2px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .contact-item.online {
+            border-color: #28a745;
+            background: #f0fff4;
+        }
+        
+        .contact-name {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .contact-status {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+        
+        .contact-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 0.85em;
+        }
+        
+        .btn-call {
+            background: #007bff;
+        }
+        
+        .btn-remove {
+            background: #dc3545;
+        }
+        
+        /* Group Call */
+        .group-section {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .group-section h4 {
+            margin: 0 0 10px 0;
+        }
+        
+        /* Call Overlay */
+        .call-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .call-overlay.active {
+            display: flex;
+        }
+        
+        .call-dialog {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            min-width: 350px;
+            animation: shake 0.5s infinite;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        .call-dialog h2 {
+            color: #007bff;
+            margin: 0 0 20px 0;
+            font-size: 2em;
+        }
+        
+        .caller-name {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin: 20px 0;
+            color: #333;
+        }
+        
+        .call-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .call-buttons button {
+            flex: 1;
+            padding: 15px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .accept-btn {
+            background: #28a745;
+            color: white;
+        }
+        
+        .accept-btn:hover {
+            background: #218838;
+        }
+        
+        .reject-btn {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .reject-btn:hover {
+            background: #c82333;
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            min-width: 400px;
+            max-width: 500px;
+        }
+        
+        .modal-content h3 {
+            margin-top: 0;
+        }
+        
+        /* Form Styles */
+        .form-group {
+            margin: 20px 0;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        
+        button {
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .btn-full {
+            width: 100%;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .btn-success {
+            background: #28a745;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        /* Status Messages */
+        .status {
+            padding: 12px;
+            border-radius: 5px;
+            margin: 15px 0;
+            font-size: 0.95em;
+        }
+        
+        .status.info {
+            background: #e7f3ff;
+            color: #004085;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #007bff;
+        }
+        
+        .my-id {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #007bff;
+            word-break: break-all;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        /* Video Grid */
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .video-box {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .video-box video {
+            width: 100%;
+            height: auto;
+            display: block;
+            min-height: 200px;
+        }
+        
+        .video-label {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+        
+        .button-row {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .button-row button {
+            flex: 1;
+        }
+        
+        @media (max-width: 968px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            
+            .video-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .modal-content {
+                min-width: 300px;
+                margin: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Call Overlay -->
+    <div class="call-overlay" id="callOverlay">
+        <div class="call-dialog">
+            <h2>📞</h2>
+            <div>Eingehender Anruf von:</div>
+            <div class="caller-name" id="callerName"></div>
+            <div class="call-buttons">
+                <button class="accept-btn" onclick="acceptCall()">✓ Annehmen</button>
+                <button class="reject-btn" onclick="rejectCall()">✗ Ablehnen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Contact Modal -->
+    <div class="modal" id="addContactModal">
+        <div class="modal-content">
+            <h3>Kontakt hinzufügen</h3>
+            <div class="form-group">
+                <label for="contactName">Name des Kontakts:</label>
+                <input type="text" id="contactName" placeholder="z.B. maria-2026">
+            </div>
+            <div class="form-group">
+                <label for="contactDisplayName">Anzeigename (optional):</label>
+                <input type="text" id="contactDisplayName" placeholder="z.B. Maria">
+            </div>
+            <div class="button-row">
+                <button class="btn-success" onclick="saveContact()">Speichern</button>
+                <button class="btn-secondary" onclick="closeModal()">Abbrechen</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h1>🎥 Video Chat mit Adressbuch</h1>
+        
+        <!-- Setup Screen -->
+        <div class="screen active" id="setupScreen">
+            <div class="info-box">
+                <h3 style="margin-top:0;">🔒 Privater Video Chat mit Kontaktverwaltung</h3>
+                <p>Wähle einen eindeutigen Namen. Nur deine gespeicherten Kontakte können dich anrufen.</p>
+            </div>
+            
+            <div class="form-group">
+                <label for="myName">Dein Chat-Name:</label>
+                <input type="text" id="myName" placeholder="z.B. hans-2026" maxlength="30">
+            </div>
+            
+            <button class="btn-full" onclick="startChat()">Chat starten</button>
+        </div>
+        
+        <!-- Chat Screen -->
+        <div class="screen" id="chatScreen">
+            <div class="main-layout">
+                <!-- Sidebar with Contacts -->
+                <div class="sidebar">
+                    <div class="contacts-header">
+                        <h3>📇 Kontakte</h3>
+                        <button class="add-contact-btn" onclick="openAddContactModal()">+ Neu</button>
+                    </div>
+                    
+                    <ul class="contact-list" id="contactList">
+                        <li style="text-align: center; padding: 20px; color: #6c757d;">
+                            Keine Kontakte
+                        </li>
+                    </ul>
+                    
+                    <div class="group-section">
+                        <h4>👥 Gruppenanruf</h4>
+                        <p style="font-size: 0.9em; margin: 10px 0;">Starte einen Anruf mit mehreren Personen (max. 5)</p>
+                        <button class="btn-full btn-success" onclick="startGroupCall()" id="groupCallBtn" disabled>
+                            Gruppe anrufen
+                        </button>
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <button class="btn-full btn-secondary" onclick="goOffline()" id="offlineBtn">
+                            ⏸️ Offline gehen
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Main Content -->
+                <div class="main-content">
+                    <div class="status info" id="status">Initialisiere...</div>
+                    
+                    <div class="info-box" id="myInfo" style="display:none;">
+                        <strong>Dein Chat-Name:</strong>
+                        <div class="my-id" id="displayMyId"></div>
+                        <small>Nur deine gespeicherten Kontakte können dich anrufen.</small>
+                    </div>
+                    
+                    <button class="btn-full btn-danger" id="endBtn" onclick="endAllCalls()" style="display:none; margin-bottom:20px;">
+                        Alle Anrufe beenden
+                    </button>
+                    
+                    <div class="video-grid" id="videoGrid">
+                        <div class="video-box">
+                            <video id="myVideo" autoplay muted playsinline></video>
+                            <div class="video-label">Du</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY_NAME = 'videochat_myname';
+        const STORAGE_KEY_CONTACTS = 'videochat_contacts';
+        
+        let peer = null;
+        let myStream = null;
+        let activeCalls = new Map(); // peerId -> call object
+        let remoteStreams = new Map(); // peerId -> stream
+        let incomingCall = null;
+        let isOnline = true;
+        let contacts = [];
+        let audioContext = null;
+        let ringtoneOscillator = null;
+
+        // Load saved data
+        window.addEventListener('load', () => {
+            const savedName = localStorage.getItem(STORAGE_KEY_NAME);
+            if (savedName) {
+                document.getElementById('myName').value = savedName;
+            }
+            
+            const savedContacts = localStorage.getItem(STORAGE_KEY_CONTACTS);
+            if (savedContacts) {
+                contacts = JSON.parse(savedContacts);
+            }
+        });
+
+        function updateStatus(message, type = 'info') {
+            const el = document.getElementById('status');
+            el.textContent = message;
+            el.className = 'status ' + type;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function saveContactsToStorage() {
+            localStorage.setItem(STORAGE_KEY_CONTACTS, JSON.stringify(contacts));
+        }
+
+        function renderContacts() {
+            const list = document.getElementById('contactList');
+            
+            if (contacts.length === 0) {
+                list.innerHTML = '<li style="text-align: center; padding: 20px; color: #6c757d;">Keine Kontakte</li>';
+                document.getElementById('groupCallBtn').disabled = true;
+                return;
+            }
+            
+            if (contacts.length > 0 && isOnline) {
+                document.getElementById('groupCallBtn').disabled = false;
+            }
+            
+            list.innerHTML = contacts.map(contact => `
+                <li class="contact-item" id="contact-${contact.id}">
+                    <div>
+                        <div class="contact-name">${contact.displayName || contact.id}</div>
+                        <div class="contact-status">${contact.id}</div>
+                    </div>
+                    <div class="contact-actions">
+                        <button class="btn-small btn-call" onclick="callContact('${contact.id}')" ${!isOnline ? 'disabled' : ''}>
+                            📞
+                        </button>
+                        <button class="btn-small btn-remove" onclick="removeContact('${contact.id}')">
+                            🗑️
+                        </button>
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        function openAddContactModal() {
+            document.getElementById('contactName').value = '';
+            document.getElementById('contactDisplayName').value = '';
+            document.getElementById('addContactModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('addContactModal').classList.remove('active');
+        }
+
+        function saveContact() {
+            const id = document.getElementById('contactName').value.trim();
+            const displayName = document.getElementById('contactDisplayName').value.trim();
+            
+            if (!id) {
+                alert('Bitte gib einen Namen ein!');
+                return;
+            }
+            
+            if (contacts.length >= 5) {
+                alert('Maximal 5 Kontakte erlaubt!');
+                return;
+            }
+            
+            if (contacts.find(c => c.id === id)) {
+                alert('Kontakt existiert bereits!');
+                return;
+            }
+            
+            contacts.push({ id, displayName: displayName || id });
+            saveContactsToStorage();
+            renderContacts();
+            closeModal();
+            updateStatus('Kontakt hinzugefügt: ' + (displayName || id), 'success');
+        }
+
+        function removeContact(contactId) {
+            if (confirm('Kontakt wirklich löschen?')) {
+                contacts = contacts.filter(c => c.id !== contactId);
+                saveContactsToStorage();
+                renderContacts();
+                updateStatus('Kontakt gelöscht', 'info');
+            }
+        }
+
+        function isContactAllowed(peerId) {
+            return contacts.some(c => c.id === peerId);
+        }
+
+        function getContactDisplayName(peerId) {
+            const contact = contacts.find(c => c.id === peerId);
+            return contact ? contact.displayName : peerId;
+        }
+
+        function playRingtone() {
+            if (!isOnline) return;
+            
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                ringtoneOscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                ringtoneOscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                ringtoneOscillator.frequency.value = 800;
+                ringtoneOscillator.type = 'sine';
+                gainNode.gain.value = 0.3;
+                
+                ringtoneOscillator.start();
+                
+                setInterval(() => {
+                    if (ringtoneOscillator && gainNode) {
+                        gainNode.gain.value = gainNode.gain.value === 0.3 ? 0 : 0.3;
+                    }
+                }, 500);
+            } catch (e) {
+                console.log('Ringtone error:', e);
+            }
+        }
+
+        function stopRingtone() {
+            if (ringtoneOscillator) {
+                try { ringtoneOscillator.stop(); } catch(e) {}
+                ringtoneOscillator = null;
+            }
+            if (audioContext) {
+                try { audioContext.close(); } catch(e) {}
+                audioContext = null;
+            }
+        }
+
+        function startChat() {
+            const myName = document.getElementById('myName').value.trim();
+            
+            if (!myName) {
+                alert('Bitte gib einen Namen ein!');
+                return;
+            }
+            
+            if (myName.length < 3) {
+                alert('Der Name muss mindestens 3 Zeichen lang sein!');
+                return;
+            }
+            
+            if (!/^[a-zA-Z0-9-_]+$/.test(myName)) {
+                alert('Nur Buchstaben, Zahlen, Bindestriche und Unterstriche erlaubt!');
+                return;
+            }
+            
+            localStorage.setItem(STORAGE_KEY_NAME, myName);
+            
+            document.getElementById('setupScreen').classList.remove('active');
+            document.getElementById('chatScreen').classList.add('active');
+            
+            renderContacts();
+            initializeChat(myName);
+        }
+
+        function initializeChat(myName) {
+            updateStatus('Fordere Kamera-Zugriff an...', 'info');
+            
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then(stream => {
+                    myStream = stream;
+                    document.getElementById('myVideo').srcObject = stream;
+                    updateStatus('Kamera aktiv. Verbinde mit Server...', 'info');
+                    initializePeer(myName);
+                })
+                .catch(err => {
+                    console.error('Kamera-Fehler:', err);
+                    updateStatus('FEHLER: Kamera-Zugriff verweigert!', 'error');
+                });
+        }
+
+        function initializePeer(myName) {
+            peer = new Peer(myName, {
+                host: '0.peerjs.com',
+                port: 443,
+                path: '/',
+                secure: true,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                }
+            });
+
+            peer.on('open', id => {
+                document.getElementById('displayMyId').textContent = id;
+                document.getElementById('myInfo').style.display = 'block';
+                isOnline = true;
+                updateStatus('✓ ONLINE - Nur deine Kontakte können dich anrufen', 'success');
+            });
+
+            peer.on('call', call => {
+                if (!isOnline) {
+                    console.log('Anruf blockiert - offline');
+                    return;
+                }
+                
+                // CHECK: Nur Kontakte dürfen anrufen
+                if (!isContactAllowed(call.peer)) {
+                    console.log('Anruf blockiert - nicht in Kontakten: ' + call.peer);
+                    updateStatus('⚠️ Anruf blockiert: ' + call.peer + ' ist nicht in deinen Kontakten', 'warning');
+                    return;
+                }
+                
+                incomingCall = call;
+                const displayName = getContactDisplayName(call.peer);
+                document.getElementById('callerName').textContent = displayName;
+                document.getElementById('callOverlay').classList.add('active');
+                playRingtone();
+                updateStatus('📞 Eingehender Anruf von: ' + displayName, 'info');
+            });
+
+            peer.on('error', err => {
+                console.error('Peer Error:', err);
+                
+                if (err.type === 'unavailable-id') {
+                    updateStatus('FEHLER: Name bereits vergeben!', 'error');
+                    setTimeout(() => location.reload(), 3000);
+                } else if (err.type === 'peer-unavailable') {
+                    updateStatus('FEHLER: Person nicht online', 'error');
+                } else {
+                    updateStatus('FEHLER: ' + err.type, 'error');
+                }
+            });
+        }
+
+        function acceptCall() {
+            stopRingtone();
+            document.getElementById('callOverlay').classList.remove('active');
+            
+            if (!incomingCall) return;
+            
+            const call = incomingCall;
+            incomingCall = null;
+            
+            call.answer(myStream);
+            
+            call.on('stream', remoteStream => {
+                addRemoteVideo(call.peer, remoteStream);
+                activeCalls.set(call.peer, call);
+                remoteStreams.set(call.peer, remoteStream);
+                
+                const displayName = getContactDisplayName(call.peer);
+                updateStatus('✓ Verbunden mit: ' + displayName, 'success');
+                document.getElementById('endBtn').style.display = 'block';
+            });
+
+            call.on('close', () => {
+                removeRemoteVideo(call.peer);
+                activeCalls.delete(call.peer);
+                remoteStreams.delete(call.peer);
+                checkIfAllCallsEnded();
+            });
+        }
+
+        function rejectCall() {
+            stopRingtone();
+            document.getElementById('callOverlay').classList.remove('active');
+            incomingCall = null;
+            updateStatus('Anruf abgelehnt', 'info');
+        }
+
+        function callContact(contactId) {
+            if (!isOnline) {
+                alert('Du bist offline!');
+                return;
+            }
+            
+            if (!myStream) {
+                alert('Kamera nicht bereit!');
+                return;
+            }
+            
+            if (activeCalls.has(contactId)) {
+                alert('Du bist bereits mit diesem Kontakt verbunden!');
+                return;
+            }
+            
+            const displayName = getContactDisplayName(contactId);
+            updateStatus('Rufe ' + displayName + ' an...', 'info');
+            
+            const call = peer.call(contactId, myStream);
+            
+            if (!call) {
+                updateStatus('FEHLER: Anruf fehlgeschlagen', 'error');
+                return;
+            }
+            
+            activeCalls.set(contactId, call);
+            
+            call.on('stream', remoteStream => {
+                addRemoteVideo(contactId, remoteStream);
+                remoteStreams.set(contactId, remoteStream);
+                updateStatus('✓ Verbunden mit: ' + displayName, 'success');
+                document.getElementById('endBtn').style.display = 'block';
+            });
+
+            call.on('error', err => {
+                console.error('Call error:', err);
+                updateStatus('FEHLER: ' + displayName + ' nicht erreichbar', 'error');
+                activeCalls.delete(contactId);
+                removeRemoteVideo(contactId);
+            });
+
+            call.on('close', () => {
+                removeRemoteVideo(contactId);
+                activeCalls.delete(contactId);
+                remoteStreams.delete(contactId);
+                updateStatus(displayName + ' hat aufgelegt', 'info');
+                checkIfAllCallsEnded();
+            });
+        }
+
+        function startGroupCall() {
+            if (!isOnline) {
+                alert('Du bist offline!');
+                return;
+            }
+            
+            if (contacts.length === 0) {
+                alert('Keine Kontakte vorhanden!');
+                return;
+            }
+            
+            if (confirm(`Alle ${contacts.length} Kontakte anrufen?`)) {
+                contacts.forEach(contact => {
+                    if (!activeCalls.has(contact.id)) {
+                        setTimeout(() => callContact(contact.id), 500);
+                    }
+                });
+            }
+        }
+
+        function addRemoteVideo(peerId, stream) {
+            // Remove if exists
+            removeRemoteVideo(peerId);
+            
+            const grid = document.getElementById('videoGrid');
+            const displayName = getContactDisplayName(peerId);
+            
+            const videoBox = document.createElement('div');
+            videoBox.className = 'video-box';
+            videoBox.id = 'video-' + peerId;
+            
+            const video = document.createElement('video');
+            video.autoplay = true;
+            video.playsinline = true;
+            video.srcObject = stream;
+            
+            const label = document.createElement('div');
+            label.className = 'video-label';
+            label.textContent = displayName;
+            
+            videoBox.appendChild(video);
+            videoBox.appendChild(label);
+            grid.appendChild(videoBox);
+        }
+
+        function removeRemoteVideo(peerId) {
+            const videoBox = document.getElementById('video-' + peerId);
+            if (videoBox) {
+                videoBox.remove();
+            }
+        }
+
+        function endAllCalls() {
+            activeCalls.forEach((call, peerId) => {
+                call.close();
+                removeRemoteVideo(peerId);
+            });
+            
+            activeCalls.clear();
+            remoteStreams.clear();
+            document.getElementById('endBtn').style.display = 'none';
+            updateStatus('Alle Anrufe beendet', 'info');
+        }
+
+        function checkIfAllCallsEnded() {
+            if (activeCalls.size === 0) {
+                document.getElementById('endBtn').style.display = 'none';
+                updateStatus('Bereit für neue Anrufe', 'info');
+            }
+        }
+
+        function goOffline() {
+            if (activeCalls.size > 0) {
+                alert('Beende zuerst alle Anrufe!');
+                return;
+            }
+            
+            if (isOnline) {
+                isOnline = false;
+                
+                if (myStream) {
+                    myStream.getTracks().forEach(track => track.stop());
+                    document.getElementById('myVideo').srcObject = null;
+                }
+                
+                if (peer) {
+                    peer.disconnect();
+                }
+                
+                document.getElementById('offlineBtn').textContent = '▶️ Online gehen';
+                document.getElementById('groupCallBtn').disabled = true;
+                updateStatus('⏸️ OFFLINE', 'warning');
+                renderContacts(); // Update call buttons
+            } else {
+                const myName = localStorage.getItem(STORAGE_KEY_NAME);
+                if (!myName) {
+                    alert('Fehler: Name nicht gefunden');
+                    return;
+                }
+                
+                document.getElementById('offlineBtn').textContent = '⏸️ Offline gehen';
+                initializeChat(myName);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -3,63 +3,150 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>📞 Video Chat für Kinder</title>
+    <title>📞 Video Chat</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         * { 
             box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
+            margin: 0;
+            padding: 0;
         }
         
         body {
-            font-family: 'Comic Sans MS', 'Arial Rounded MT Bold', Arial, sans-serif;
-            margin: 0;
-            padding: 0;
+            font-family: 'Comic Sans MS', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             color: #333;
         }
         
         .container {
-            max-width: 100%;
-            min-height: 100vh;
-            padding: 0;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
         }
         
-        /* Header */
         .header {
             background: white;
-            padding: 15px;
+            padding: 20px;
+            border-radius: 15px;
             text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
         }
         
         .header h1 {
-            margin: 0;
-            font-size: 1.8em;
             color: #667eea;
+            margin-bottom: 10px;
         }
         
-        .online-badge {
-            display: inline-block;
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-size: 1em;
-            margin-top: 10px;
+        .status {
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            margin: 15px 0;
+            text-align: center;
             font-weight: bold;
         }
         
-        .online-badge.online {
-            background: #4ade80;
+        .status.online { background: #d1fae5; color: #065f46; }
+        .status.offline { background: #fee2e2; color: #991b1b; }
+        .status.calling { background: #dbeafe; color: #1e40af; }
+        
+        .my-id {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            word-break: break-all;
+        }
+        
+        .my-id strong {
+            color: #667eea;
+            font-size: 1.2em;
+        }
+        
+        .input-group {
+            margin: 15px 0;
+        }
+        
+        .input-group label {
+            display: block;
+            color: white;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+        }
+        
+        button {
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px 0;
+            font-family: inherit;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #4ade80, #22c55e);
             color: white;
         }
         
-        .online-badge.offline {
-            background: #94a3b8;
+        .btn-danger {
+            background: linear-gradient(135deg, #f87171, #dc2626);
             color: white;
         }
         
-        /* Screen Management */
+        .btn-secondary {
+            background: linear-gradient(135deg, #60a5fa, #3b82f6);
+            color: white;
+        }
+        
+        .video-grid {
+            display: grid;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .video-box {
+            background: #1a1a1a;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .video-box video {
+            width: 100%;
+            height: auto;
+            display: block;
+            min-height: 200px;
+        }
+        
+        .video-label {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        
         .screen {
             display: none;
         }
@@ -68,264 +155,6 @@
             display: block;
         }
         
-        /* Setup Screen */
-        .setup-screen {
-            padding: 20px;
-            text-align: center;
-        }
-        
-        .welcome-emoji {
-            font-size: 5em;
-            margin: 30px 0;
-            animation: bounce 2s infinite;
-        }
-        
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-20px); }
-        }
-        
-        .info-card {
-            background: white;
-            border-radius: 20px;
-            padding: 25px;
-            margin: 20px 0;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .info-card h2 {
-            margin-top: 0;
-            color: #667eea;
-            font-size: 1.5em;
-        }
-        
-        .info-card p {
-            font-size: 1.1em;
-            line-height: 1.6;
-            color: #555;
-        }
-        
-        .input-group {
-            margin: 25px 0;
-        }
-        
-        .input-group label {
-            display: block;
-            font-size: 1.3em;
-            font-weight: bold;
-            color: white;
-            margin-bottom: 10px;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
-        }
-        
-        .input-group input {
-            width: 100%;
-            padding: 18px;
-            font-size: 1.2em;
-            border: 3px solid white;
-            border-radius: 15px;
-            font-family: inherit;
-            background: white;
-        }
-        
-        /* Big Buttons */
-        .big-button {
-            width: 100%;
-            padding: 20px;
-            font-size: 1.4em;
-            font-weight: bold;
-            border: none;
-            border-radius: 20px;
-            cursor: pointer;
-            font-family: inherit;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-            transition: transform 0.2s, box-shadow 0.2s;
-            margin: 10px 0;
-        }
-        
-        .big-button:active {
-            transform: scale(0.95);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }
-        
-        .big-button.primary {
-            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-            color: white;
-        }
-        
-        .big-button.danger {
-            background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
-            color: white;
-        }
-        
-        .big-button.secondary {
-            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-            color: white;
-        }
-        
-        .big-button.warning {
-            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-            color: white;
-        }
-        
-        .big-button:disabled {
-            background: #d1d5db;
-            color: #9ca3af;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        /* Contact Cards */
-        .contacts-section {
-            padding: 15px;
-        }
-        
-        .section-title {
-            color: white;
-            font-size: 1.5em;
-            margin: 20px 0 15px 0;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .add-contact-btn {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: #4ade80;
-            color: white;
-            border: none;
-            font-size: 2em;
-            cursor: pointer;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.3);
-        }
-        
-        .contact-card {
-            background: white;
-            border-radius: 20px;
-            padding: 20px;
-            margin: 15px 0;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .contact-info {
-            flex: 1;
-        }
-        
-        .contact-emoji {
-            font-size: 2.5em;
-            margin-right: 15px;
-        }
-        
-        .contact-name {
-            font-size: 1.3em;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 5px;
-        }
-        
-        .contact-id {
-            font-size: 0.9em;
-            color: #888;
-        }
-        
-        .contact-actions {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        
-        .icon-button {
-            width: 60px;
-            height: 60px;
-            border-radius: 15px;
-            border: none;
-            font-size: 1.8em;
-            cursor: pointer;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
-        }
-        
-        .icon-button.call {
-            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-        }
-        
-        .icon-button.delete {
-            background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
-        }
-        
-        /* Video Grid */
-        .video-section {
-            padding: 15px;
-        }
-        
-        .video-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 15px;
-            margin: 15px 0;
-        }
-        
-        .video-card {
-            background: #1a1a1a;
-            border-radius: 20px;
-            overflow: hidden;
-            position: relative;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-        }
-        
-        .video-card video {
-            width: 100%;
-            height: auto;
-            display: block;
-            min-height: 250px;
-            object-fit: cover;
-        }
-        
-        .video-placeholder {
-            width: 100%;
-            min-height: 250px;
-            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-        
-        .video-placeholder .emoji {
-            font-size: 4em;
-            margin-bottom: 10px;
-        }
-        
-        .video-label {
-            position: absolute;
-            bottom: 15px;
-            left: 15px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 15px;
-            font-size: 1.2em;
-            font-weight: bold;
-        }
-        
-        .audio-indicator {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 8px 15px;
-            border-radius: 15px;
-            font-size: 1.5em;
-        }
-        
-        /* Call Overlay */
         .call-overlay {
             display: none;
             position: fixed;
@@ -334,9 +163,9 @@
             right: 0;
             bottom: 0;
             background: rgba(0,0,0,0.9);
-            z-index: 1000;
             justify-content: center;
             align-items: center;
+            z-index: 1000;
         }
         
         .call-overlay.active {
@@ -345,33 +174,19 @@
         
         .call-dialog {
             background: white;
-            padding: 40px 30px;
-            border-radius: 30px;
+            padding: 40px;
+            border-radius: 20px;
             text-align: center;
             max-width: 90%;
-            animation: shake 0.5s infinite;
         }
         
-        @keyframes shake {
-            0%, 100% { transform: scale(1) rotate(0deg); }
-            25% { transform: scale(1.05) rotate(-2deg); }
-            75% { transform: scale(1.05) rotate(2deg); }
+        .call-dialog h2 {
+            font-size: 3em;
+            margin: 0;
         }
         
-        .call-emoji {
-            font-size: 5em;
-            animation: ring 1s infinite;
-        }
-        
-        @keyframes ring {
-            0%, 100% { transform: rotate(0deg); }
-            25% { transform: rotate(-15deg); }
-            75% { transform: rotate(15deg); }
-        }
-        
-        .caller-name {
+        .call-dialog .name {
             font-size: 2em;
-            font-weight: bold;
             margin: 20px 0;
             color: #667eea;
         }
@@ -379,895 +194,272 @@
         .call-buttons {
             display: flex;
             gap: 15px;
-            margin-top: 30px;
+            margin-top: 20px;
         }
         
-        .call-button {
-            flex: 1;
-            padding: 20px;
-            font-size: 1.5em;
-            border: none;
-            border-radius: 20px;
-            cursor: pointer;
-            font-weight: bold;
+        .call-buttons button {
+            margin: 0;
         }
         
-        .call-button.accept {
-            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-            color: white;
-        }
-        
-        .call-button.reject {
-            background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
-            color: white;
-        }
-        
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.8);
-            z-index: 999;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        
-        .modal.active {
-            display: flex;
-        }
-        
-        .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 25px;
-            width: 100%;
-            max-width: 400px;
-        }
-        
-        .modal-content h2 {
-            margin-top: 0;
-            color: #667eea;
-            font-size: 1.8em;
-        }
-        
-        /* Status Messages */
-        .status-bar {
-            background: white;
-            padding: 15px;
-            margin: 15px;
-            border-radius: 15px;
-            font-size: 1.1em;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        
-        .status-bar.success {
-            background: #d1fae5;
-            color: #065f46;
-        }
-        
-        .status-bar.error {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-        
-        .status-bar.warning {
-            background: #fef3c7;
-            color: #92400e;
-        }
-        
-        .status-bar.info {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-        
-        /* Group Call Button */
-        .group-call-section {
-            padding: 15px;
-        }
-        
-        .group-card {
-            background: white;
-            border-radius: 20px;
-            padding: 25px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        
-        .group-emoji {
-            font-size: 4em;
-            margin-bottom: 15px;
-        }
-        
-        .group-card h3 {
-            margin: 10px 0;
-            color: #667eea;
-            font-size: 1.5em;
-        }
-        
-        .group-card p {
-            color: #666;
-            margin-bottom: 20px;
-            font-size: 1.1em;
-        }
-        
-        /* Tablet and Desktop */
         @media (min-width: 768px) {
-            .container {
-                max-width: 600px;
-                margin: 0 auto;
-            }
-            
             .video-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
-        
-        /* No contacts message */
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: white;
-        }
-        
-        .empty-state .emoji {
-            font-size: 4em;
-            margin-bottom: 15px;
-        }
-        
-        .empty-state p {
-            font-size: 1.3em;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
-        }
     </style>
 </head>
 <body>
-    <!-- Call Overlay -->
     <div class="call-overlay" id="callOverlay">
         <div class="call-dialog">
-            <div class="call-emoji">📞</div>
-            <div>Anruf von</div>
-            <div class="caller-name" id="callerName"></div>
+            <h2>📞</h2>
+            <div>Eingehender Anruf von:</div>
+            <div class="name" id="callerName"></div>
             <div class="call-buttons">
-                <button class="call-button accept" onclick="acceptCall()">
-                    ✓<br>Annehmen
-                </button>
-                <button class="call-button reject" onclick="rejectCall()">
-                    ✗<br>Ablehnen
-                </button>
+                <button class="btn-primary" onclick="acceptCall()">✓ Annehmen</button>
+                <button class="btn-danger" onclick="rejectCall()">✗ Ablehnen</button>
             </div>
-        </div>
-    </div>
-
-    <!-- Add Contact Modal -->
-    <div class="modal" id="addContactModal">
-        <div class="modal-content">
-            <h2>Freund hinzufügen</h2>
-            <div class="input-group">
-                <label>Name:</label>
-                <input type="text" id="contactName" placeholder="z.B. maria-2026">
-            </div>
-            <div class="input-group">
-                <label>Spitzname (optional):</label>
-                <input type="text" id="contactDisplayName" placeholder="z.B. Maria">
-            </div>
-            <button class="big-button primary" onclick="saveContact()">Speichern</button>
-            <button class="big-button secondary" onclick="closeModal()">Abbrechen</button>
         </div>
     </div>
 
     <div class="container">
-        <!-- Header -->
         <div class="header">
             <h1>📞 Video Chat</h1>
-            <div class="online-badge" id="onlineBadge">🔴 Offline</div>
         </div>
-        
+
         <!-- Setup Screen -->
         <div class="screen active" id="setupScreen">
-            <div class="setup-screen">
-                <div class="welcome-emoji">👋</div>
-                
-                <div class="info-card">
-                    <h2>Willkommen!</h2>
-                    <p>Wähle einen Namen für dich aus. Deine Freunde können dich dann anrufen!</p>
-                </div>
-                
-                <div class="input-group">
-                    <label>Dein Name:</label>
-                    <input type="text" id="myName" placeholder="z.B. anna-2026">
-                </div>
-                
-                <button class="big-button primary" onclick="startChat()">
-                    Los geht's! 🚀
-                </button>
+            <div class="status">Gib deinen Namen ein</div>
+            
+            <div class="input-group">
+                <label>Dein Name:</label>
+                <input type="text" id="myName" placeholder="z.B. anna-2026">
             </div>
+            
+            <button class="btn-primary" onclick="start()">Starten 🚀</button>
         </div>
-        
+
         <!-- Chat Screen -->
         <div class="screen" id="chatScreen">
-            <!-- Status -->
-            <div class="status-bar info" id="status">Verbinde...</div>
+            <div class="status online" id="status">Online</div>
             
-            <!-- My Info -->
-            <div id="myInfo" style="display:none; padding: 15px;">
-                <div class="info-card">
-                    <h2>Dein Name:</h2>
-                    <div style="font-size: 1.3em; font-weight: bold; color: #667eea; word-break: break-all;">
-                        <span id="displayMyId"></span>
-                    </div>
-                    <p style="margin-top: 10px; font-size: 0.95em;">
-                        Teile diesen Namen mit deinen Freunden!
-                    </p>
-                </div>
+            <div class="my-id">
+                <strong>Dein Name:</strong><br>
+                <span id="myId"></span>
+            </div>
+
+            <div class="input-group">
+                <label>Freund anrufen:</label>
+                <input type="text" id="friendName" placeholder="Name eingeben">
             </div>
             
-            <!-- Videos -->
-            <div class="video-section">
-                <div class="video-grid" id="videoGrid">
-                    <div class="video-card">
-                        <div class="video-placeholder" id="myVideoPlaceholder">
-                            <div class="emoji">📹</div>
-                            <div>Kamera aus</div>
-                        </div>
-                        <video id="myVideo" autoplay muted playsinline style="display:none;"></video>
-                        <div class="video-label">Du</div>
-                        <div class="audio-indicator">🔇</div>
-                    </div>
+            <button class="btn-primary" onclick="call()" id="callBtn">Anrufen 📞</button>
+            <button class="btn-danger" onclick="hangup()" id="hangupBtn" style="display:none;">Auflegen</button>
+
+            <div class="video-grid" id="videoGrid">
+                <div class="video-box">
+                    <video id="myVideo" autoplay muted playsinline></video>
+                    <div class="video-label">Du</div>
                 </div>
-            </div>
-            
-            <!-- End Call Button -->
-            <div style="padding: 15px; display: none;" id="endCallSection">
-                <button class="big-button danger" onclick="endAllCalls()">
-                    Auflegen 📞
-                </button>
-            </div>
-            
-            <!-- Group Call -->
-            <div class="group-call-section" id="groupSection">
-                <div class="group-card">
-                    <div class="group-emoji">👥</div>
-                    <h3>Gruppenanruf</h3>
-                    <p>Alle Freunde gleichzeitig anrufen</p>
-                    <button class="big-button primary" onclick="startGroupCall()" id="groupCallBtn" disabled>
-                        Alle anrufen 🎉
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Contacts -->
-            <div class="contacts-section">
-                <div class="section-title">
-                    <span>👫 Meine Freunde</span>
-                    <button class="add-contact-btn" onclick="openAddContactModal()">+</button>
-                </div>
-                
-                <div id="contactList">
-                    <div class="empty-state">
-                        <div class="emoji">😊</div>
-                        <p>Noch keine Freunde hinzugefügt</p>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Online/Offline Toggle -->
-            <div style="padding: 15px;">
-                <button class="big-button warning" onclick="toggleOnlineStatus()" id="statusBtn">
-                    Offline gehen ⏸️
-                </button>
-                <p style="color: white; text-align: center; margin-top: 10px; font-size: 1em; text-shadow: 1px 1px 2px rgba(0,0,0,0.2);">
-                    Offline = Keine Anrufe empfangen
-                </p>
             </div>
         </div>
     </div>
 
     <script>
-        const STORAGE_KEY_NAME = 'videochat_myname';
-        const STORAGE_KEY_CONTACTS = 'videochat_contacts';
-        
-        const EMOJI_LIST = ['😊', '😎', '🌟', '🎨', '🎮', '⚽', '🎸', '🐱', '🐶', '🦁', '🐼', '🦄', '🌈', '🍕', '🍦'];
-        
         let peer = null;
         let myStream = null;
-        let activeCalls = new Map();
-        let remoteStreams = new Map();
+        let currentCall = null;
         let incomingCall = null;
-        let isOnline = false;
-        let videoVisible = false;
-        let contacts = [];
-        let audioContext = null;
-        let ringtoneOscillator = null;
 
-        window.addEventListener('load', () => {
-            const savedName = localStorage.getItem(STORAGE_KEY_NAME);
-            if (savedName) {
-                document.getElementById('myName').value = savedName;
-            }
+        async function start() {
+            const name = document.getElementById('myName').value.trim();
             
-            const savedContacts = localStorage.getItem(STORAGE_KEY_CONTACTS);
-            if (savedContacts) {
-                contacts = JSON.parse(savedContacts);
-            }
-        });
-
-        function updateStatus(message, type = 'info') {
-            const el = document.getElementById('status');
-            el.textContent = message;
-            el.className = 'status-bar ' + type;
-            console.log('[STATUS]', message);
-        }
-
-        function updateOnlineBadge() {
-            const badge = document.getElementById('onlineBadge');
-            if (isOnline) {
-                badge.textContent = '🟢 Online';
-                badge.className = 'online-badge online';
-            } else {
-                badge.textContent = '🔴 Offline';
-                badge.className = 'online-badge offline';
-            }
-        }
-
-        function getRandomEmoji() {
-            return EMOJI_LIST[Math.floor(Math.random() * EMOJI_LIST.length)];
-        }
-
-        function saveContactsToStorage() {
-            localStorage.setItem(STORAGE_KEY_CONTACTS, JSON.stringify(contacts));
-        }
-
-        function renderContacts() {
-            const list = document.getElementById('contactList');
-            
-            if (contacts.length === 0) {
-                list.innerHTML = `
-                    <div class="empty-state">
-                        <div class="emoji">😊</div>
-                        <p>Noch keine Freunde hinzugefügt</p>
-                    </div>
-                `;
-                document.getElementById('groupCallBtn').disabled = true;
+            if (!name || name.length < 3) {
+                alert('Name muss mindestens 3 Zeichen haben!');
                 return;
             }
-            
-            if (contacts.length > 0 && isOnline) {
-                document.getElementById('groupCallBtn').disabled = false;
-            } else {
-                document.getElementById('groupCallBtn').disabled = true;
-            }
-            
-            list.innerHTML = contacts.map(contact => `
-                <div class="contact-card">
-                    <div style="display: flex; align-items: center; flex: 1;">
-                        <div class="contact-emoji">${contact.emoji || '😊'}</div>
-                        <div class="contact-info">
-                            <div class="contact-name">${contact.displayName || contact.id}</div>
-                            <div class="contact-id">${contact.id}</div>
-                        </div>
-                    </div>
-                    <div class="contact-actions">
-                        <button class="icon-button call" onclick="callContact('${contact.id}')" ${!isOnline ? 'disabled' : ''}>
-                            📞
-                        </button>
-                        <button class="icon-button delete" onclick="removeContact('${contact.id}')">
-                            🗑️
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-        }
 
-        function openAddContactModal() {
-            document.getElementById('contactName').value = '';
-            document.getElementById('contactDisplayName').value = '';
-            document.getElementById('addContactModal').classList.add('active');
-        }
-
-        function closeModal() {
-            document.getElementById('addContactModal').classList.remove('active');
-        }
-
-        function saveContact() {
-            const id = document.getElementById('contactName').value.trim();
-            const displayName = document.getElementById('contactDisplayName').value.trim();
-            
-            if (!id) {
-                alert('Bitte gib einen Namen ein!');
-                return;
-            }
-            
-            if (contacts.length >= 5) {
-                alert('Du kannst maximal 5 Freunde haben!');
-                return;
-            }
-            
-            if (contacts.find(c => c.id === id)) {
-                alert('Dieser Freund ist schon in deiner Liste!');
-                return;
-            }
-            
-            contacts.push({ 
-                id, 
-                displayName: displayName || id,
-                emoji: getRandomEmoji()
-            });
-            saveContactsToStorage();
-            renderContacts();
-            closeModal();
-            updateStatus('Freund hinzugefügt! 🎉', 'success');
-        }
-
-        function removeContact(contactId) {
-            if (confirm('Freund wirklich löschen?')) {
-                contacts = contacts.filter(c => c.id !== contactId);
-                saveContactsToStorage();
-                renderContacts();
-                updateStatus('Freund gelöscht', 'info');
-            }
-        }
-
-        function isContactAllowed(peerId) {
-            return contacts.some(c => c.id === peerId);
-        }
-
-        function getContactDisplayName(peerId) {
-            const contact = contacts.find(c => c.id === peerId);
-            return contact ? contact.displayName : peerId;
-        }
-
-        function playRingtone() {
-            if (!isOnline) return;
-            
             try {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                ringtoneOscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                
-                ringtoneOscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                
-                ringtoneOscillator.frequency.value = 800;
-                ringtoneOscillator.type = 'sine';
-                gainNode.gain.value = 0.3;
-                
-                ringtoneOscillator.start();
-                
-                setInterval(() => {
-                    if (ringtoneOscillator && gainNode) {
-                        gainNode.gain.value = gainNode.gain.value === 0.3 ? 0 : 0.3;
-                    }
-                }, 500);
-            } catch (e) {
-                console.log('Ringtone error:', e);
-            }
-        }
-
-        function stopRingtone() {
-            if (ringtoneOscillator) {
-                try { ringtoneOscillator.stop(); } catch(e) {}
-                ringtoneOscillator = null;
-            }
-            if (audioContext) {
-                try { audioContext.close(); } catch(e) {}
-                audioContext = null;
-            }
-        }
-
-        async function requestCameraPermission() {
-            if (myStream) return myStream;
-            
-            try {
-                updateStatus('Bitte erlaube Kamera-Zugriff... 📹', 'info');
+                // 1. Kamera-Zugriff
+                console.log('Fordere Medien an...');
                 myStream = await navigator.mediaDevices.getUserMedia({ 
                     video: true, 
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    }
+                    audio: true 
                 });
                 
-                const videoTracks = myStream.getVideoTracks();
-                const audioTracks = myStream.getAudioTracks();
+                console.log('✓ Stream erhalten:', myStream.getTracks().map(t => t.kind));
                 
-                console.log('✓ Stream erhalten:');
-                console.log('  Video Tracks:', videoTracks.length, videoTracks.map(t => t.label));
-                console.log('  Audio Tracks:', audioTracks.length, audioTracks.map(t => t.label));
+                // 2. Zeige eigenes Video
+                document.getElementById('myVideo').srcObject = myStream;
                 
-                return myStream;
+                // 3. PeerJS initialisieren
+                console.log('Initialisiere Peer...');
+                peer = new Peer(name);
+                
+                peer.on('open', (id) => {
+                    console.log('✓ Peer ID:', id);
+                    document.getElementById('myId').textContent = id;
+                    document.getElementById('setupScreen').classList.remove('active');
+                    document.getElementById('chatScreen').classList.add('active');
+                });
+
+                peer.on('call', (call) => {
+                    console.log('📞 Eingehender Anruf von:', call.peer);
+                    incomingCall = call;
+                    document.getElementById('callerName').textContent = call.peer;
+                    document.getElementById('callOverlay').classList.add('active');
+                });
+
+                peer.on('error', (err) => {
+                    console.error('Peer Error:', err);
+                    alert('Fehler: ' + (err.type === 'unavailable-id' ? 'Name schon vergeben!' : err.type));
+                });
+                
             } catch (err) {
-                console.error('Kamera-Fehler:', err);
-                alert('Fehler: Bitte erlaube den Zugriff auf Kamera und Mikrofon!');
-                throw err;
+                console.error('Media Error:', err);
+                alert('Fehler beim Zugriff auf Kamera/Mikrofon!');
             }
         }
 
-        function showVideo() {
-            if (videoVisible) return;
-            if (!myStream) return;
+        function call() {
+            const friendName = document.getElementById('friendName').value.trim();
             
-            document.getElementById('myVideo').srcObject = myStream;
-            document.getElementById('myVideo').style.display = 'block';
-            document.getElementById('myVideoPlaceholder').style.display = 'none';
-            
-            // NUR Video aktivieren, Audio bleibt immer an!
-            myStream.getVideoTracks().forEach(track => {
-                track.enabled = true;
-                console.log('Video Track aktiviert:', track.label);
-            });
-            
-            videoVisible = true;
-            console.log('✓ Video angezeigt');
-        }
-
-        function hideVideo() {
-            if (!videoVisible) return;
-            if (!myStream) return;
-            
-            // NUR Video deaktivieren, Audio läuft weiter!
-            myStream.getVideoTracks().forEach(track => {
-                track.enabled = false;
-                console.log('Video Track deaktiviert:', track.label);
-            });
-            
-            // Audio bleibt aktiviert!
-            myStream.getAudioTracks().forEach(track => {
-                console.log('Audio Track bleibt aktiv:', track.label, track.enabled);
-            });
-            
-            document.getElementById('myVideo').style.display = 'none';
-            document.getElementById('myVideoPlaceholder').style.display = 'flex';
-            
-            videoVisible = false;
-            console.log('✓ Video versteckt (Audio läuft weiter)');
-        }
-
-        function startChat() {
-            const myName = document.getElementById('myName').value.trim();
-            
-            if (!myName) {
-                alert('Bitte gib einen Namen ein!');
+            if (!friendName) {
+                alert('Bitte Namen eingeben!');
                 return;
             }
+
+            console.log('Rufe an:', friendName);
+            document.getElementById('status').textContent = 'Rufe ' + friendName + ' an...';
+            document.getElementById('status').className = 'status calling';
             
-            if (myName.length < 3) {
-                alert('Der Name muss mindestens 3 Buchstaben haben!');
+            // Anruf starten
+            currentCall = peer.call(friendName, myStream);
+            
+            if (!currentCall) {
+                alert('Anruf fehlgeschlagen!');
                 return;
             }
-            
-            if (!/^[a-zA-Z0-9-_]+$/.test(myName)) {
-                alert('Nur Buchstaben, Zahlen und - erlaubt!');
-                return;
-            }
-            
-            localStorage.setItem(STORAGE_KEY_NAME, myName);
-            
-            document.getElementById('setupScreen').classList.remove('active');
-            document.getElementById('chatScreen').classList.add('active');
-            
-            renderContacts();
-            
-            requestCameraPermission()
-                .then(() => {
-                    initializePeer(myName);
-                })
-                .catch(err => {
-                    updateStatus('Kamera-Zugriff benötigt!', 'error');
-                });
-        }
 
-        function initializePeer(myName) {
-            updateStatus('Verbinde mit Server... ⏳', 'info');
-            
-            peer = new Peer(myName, {
-                host: '0.peerjs.com',
-                port: 443,
-                path: '/',
-                secure: true,
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ]
-                }
+            console.log('✓ Anruf gestartet');
+
+            currentCall.on('stream', (remoteStream) => {
+                console.log('✓ Remote Stream empfangen:', remoteStream.getTracks().map(t => t.kind));
+                addRemoteVideo(friendName, remoteStream);
+                document.getElementById('status').textContent = 'Verbunden mit ' + friendName;
+                document.getElementById('status').className = 'status online';
+                document.getElementById('callBtn').style.display = 'none';
+                document.getElementById('hangupBtn').style.display = 'block';
             });
 
-            peer.on('open', id => {
-                document.getElementById('displayMyId').textContent = id;
-                document.getElementById('myInfo').style.display = 'block';
-                isOnline = true;
-                updateOnlineBadge();
-                updateStatus('Du bist jetzt online! 🎉', 'success');
+            currentCall.on('close', () => {
+                console.log('Anruf beendet');
+                removeRemoteVideo();
+                resetUI();
             });
 
-            peer.on('call', call => {
-                if (!isOnline) {
-                    console.log('Anruf blockiert - offline');
-                    return;
-                }
-                
-                if (!isContactAllowed(call.peer)) {
-                    console.log('Anruf blockiert - nicht in Freunden: ' + call.peer);
-                    updateStatus('⚠️ Unbekannte Person blockiert', 'warning');
-                    return;
-                }
-                
-                incomingCall = call;
-                const displayName = getContactDisplayName(call.peer);
-                document.getElementById('callerName').textContent = displayName;
-                document.getElementById('callOverlay').classList.add('active');
-                playRingtone();
-                updateStatus('📞 Anruf von ' + displayName, 'info');
-            });
-
-            peer.on('error', err => {
-                console.error('Peer Fehler:', err);
-                
-                if (err.type === 'unavailable-id') {
-                    updateStatus('Fehler: Name schon vergeben!', 'error');
-                    setTimeout(() => location.reload(), 3000);
-                } else {
-                    updateStatus('Verbindungsfehler', 'error');
-                }
-            });
-
-            peer.on('disconnected', () => {
-                if (isOnline) {
-                    updateStatus('Verbindung unterbrochen... 🔄', 'warning');
-                    peer.reconnect();
-                }
+            currentCall.on('error', (err) => {
+                console.error('Call Error:', err);
+                alert('Fehler beim Anruf: ' + err);
+                resetUI();
             });
         }
 
-        async function acceptCall() {
-            stopRingtone();
+        function acceptCall() {
+            console.log('Nehme Anruf an...');
             document.getElementById('callOverlay').classList.remove('active');
             
             if (!incomingCall) return;
-            
-            const call = incomingCall;
+
+            // Anruf beantworten
+            currentCall = incomingCall;
             incomingCall = null;
             
-            showVideo();
-            
-            console.log('Beantworte Anruf mit Stream:', myStream.getTracks().map(t => `${t.kind}: ${t.label}`));
-            
-            call.answer(myStream);
-            
-            call.on('stream', remoteStream => {
-                console.log('✓ Remote Stream empfangen:', remoteStream.getTracks().map(t => `${t.kind}: ${t.label} (enabled: ${t.enabled})`));
-                addRemoteVideo(call.peer, remoteStream);
-                activeCalls.set(call.peer, call);
-                remoteStreams.set(call.peer, remoteStream);
-                
-                const displayName = getContactDisplayName(call.peer);
-                updateStatus('Verbunden mit ' + displayName + ' 🎉', 'success');
-                document.getElementById('endCallSection').style.display = 'block';
+            currentCall.answer(myStream);
+            console.log('✓ Anruf beantwortet');
+
+            currentCall.on('stream', (remoteStream) => {
+                console.log('✓ Remote Stream empfangen:', remoteStream.getTracks().map(t => t.kind));
+                addRemoteVideo(currentCall.peer, remoteStream);
+                document.getElementById('status').textContent = 'Verbunden mit ' + currentCall.peer;
+                document.getElementById('callBtn').style.display = 'none';
+                document.getElementById('hangupBtn').style.display = 'block';
             });
 
-            call.on('close', () => {
+            currentCall.on('close', () => {
                 console.log('Anruf beendet');
-                removeRemoteVideo(call.peer);
-                activeCalls.delete(call.peer);
-                remoteStreams.delete(call.peer);
-                checkIfAllCallsEnded();
-            });
-
-            call.on('error', (err) => {
-                console.error('Call error:', err);
+                removeRemoteVideo();
+                resetUI();
             });
         }
 
         function rejectCall() {
-            stopRingtone();
+            console.log('Anruf abgelehnt');
             document.getElementById('callOverlay').classList.remove('active');
             incomingCall = null;
-            updateStatus('Anruf abgelehnt', 'info');
         }
 
-        async function callContact(contactId) {
-            if (!isOnline) {
-                alert('Du bist offline! Gehe erst online.');
-                return;
+        function hangup() {
+            if (currentCall) {
+                currentCall.close();
+                currentCall = null;
             }
-            
-            if (activeCalls.has(contactId)) {
-                alert('Du telefonierst schon mit diesem Freund!');
-                return;
-            }
-            
-            if (!myStream) {
-                alert('Kamera nicht bereit!');
-                return;
-            }
-            
-            showVideo();
-            
-            const displayName = getContactDisplayName(contactId);
-            updateStatus('Rufe ' + displayName + ' an... 📞', 'info');
-            
-            console.log('Starte Anruf mit Stream:', myStream.getTracks().map(t => `${t.kind}: ${t.label} (enabled: ${t.enabled})`));
-            
-            const call = peer.call(contactId, myStream);
-            
-            if (!call) {
-                updateStatus('Fehler beim Anrufen', 'error');
-                return;
-            }
-            
-            activeCalls.set(contactId, call);
-            
-            call.on('stream', remoteStream => {
-                console.log('✓ Remote Stream empfangen:', remoteStream.getTracks().map(t => `${t.kind}: ${t.label} (enabled: ${t.enabled})`));
-                addRemoteVideo(contactId, remoteStream);
-                remoteStreams.set(contactId, remoteStream);
-                updateStatus('Verbunden mit ' + displayName + ' 🎉', 'success');
-                document.getElementById('endCallSection').style.display = 'block';
-            });
-
-            call.on('error', err => {
-                console.error('Call error:', err);
-                updateStatus(displayName + ' ist nicht erreichbar', 'error');
-                activeCalls.delete(contactId);
-                removeRemoteVideo(contactId);
-            });
-
-            call.on('close', () => {
-                console.log('Anruf beendet');
-                removeRemoteVideo(contactId);
-                activeCalls.delete(contactId);
-                remoteStreams.delete(contactId);
-                updateStatus(displayName + ' hat aufgelegt', 'info');
-                checkIfAllCallsEnded();
-            });
+            removeRemoteVideo();
+            resetUI();
         }
 
-        function startGroupCall() {
-            if (!isOnline) {
-                alert('Du bist offline!');
-                return;
-            }
-            
-            if (contacts.length === 0) {
-                alert('Du hast keine Freunde hinzugefügt!');
-                return;
-            }
-            
-            if (confirm(`Alle ${contacts.length} Freunde anrufen?`)) {
-                updateStatus('Rufe alle Freunde an... 📞', 'info');
-                contacts.forEach((contact, index) => {
-                    if (!activeCalls.has(contact.id)) {
-                        setTimeout(() => callContact(contact.id), index * 500);
-                    }
-                });
-            }
-        }
-
-        function addRemoteVideo(peerId, stream) {
-            removeRemoteVideo(peerId);
+        function addRemoteVideo(name, stream) {
+            removeRemoteVideo();
             
             const grid = document.getElementById('videoGrid');
-            const displayName = getContactDisplayName(peerId);
-            
-            console.log(`Erstelle Video Element für ${peerId}:`, stream.getTracks().map(t => `${t.kind}: ${t.label}`));
-            
-            const videoCard = document.createElement('div');
-            videoCard.className = 'video-card';
-            videoCard.id = 'video-' + peerId;
+            const box = document.createElement('div');
+            box.className = 'video-box';
+            box.id = 'remoteVideo';
             
             const video = document.createElement('video');
             video.autoplay = true;
             video.playsinline = true;
             video.srcObject = stream;
             
-            // WICHTIG: Audio MUSS aktiviert sein!
+            // KRITISCH: Audio aktivieren!
             video.muted = false;
             video.volume = 1.0;
             
-            console.log(`Video Settings: muted=${video.muted}, volume=${video.volume}`);
-            
             const label = document.createElement('div');
             label.className = 'video-label';
-            label.textContent = displayName;
+            label.textContent = name;
             
-            const audioIndicator = document.createElement('div');
-            audioIndicator.className = 'audio-indicator';
-            audioIndicator.textContent = '🔊';
+            box.appendChild(video);
+            box.appendChild(label);
+            grid.appendChild(box);
             
-            videoCard.appendChild(video);
-            videoCard.appendChild(label);
-            videoCard.appendChild(audioIndicator);
-            grid.appendChild(videoCard);
-            
-            // Force play mit User-Interaktion
-            const playPromise = video.play();
-            if (playPromise !== undefined) {
-                playPromise
-                    .then(() => {
-                        console.log(`✓ Video spielt für ${peerId}`);
-                        console.log(`  Audio Tracks im Stream:`, stream.getAudioTracks().map(t => `${t.label} (enabled: ${t.enabled})`));
-                    })
-                    .catch(err => {
-                        console.error(`Video play error für ${peerId}:`, err);
-                        // Bei Autoplay-Block: User muss klicken
-                        if (err.name === 'NotAllowedError') {
-                            console.log('Autoplay blockiert - füge Click-Handler hinzu');
-                            videoCard.addEventListener('click', () => {
-                                video.play();
-                            }, { once: true });
-                        }
-                    });
-            }
-        }
-
-        function removeRemoteVideo(peerId) {
-            const videoCard = document.getElementById('video-' + peerId);
-            if (videoCard) {
-                videoCard.remove();
-            }
-        }
-
-        function endAllCalls() {
-            activeCalls.forEach((call, peerId) => {
-                call.close();
-                removeRemoteVideo(peerId);
+            // Force play
+            video.play().then(() => {
+                console.log('✓ Remote Video spielt');
+            }).catch((err) => {
+                console.warn('Autoplay blockiert:', err);
+                // User-Interaktion erforderlich
+                box.addEventListener('click', () => {
+                    video.play();
+                    video.muted = false;
+                }, { once: true });
+                box.style.cursor = 'pointer';
+                box.style.border = '3px solid red';
+                label.textContent = name + ' - Klicken für Ton!';
             });
-            
-            activeCalls.clear();
-            remoteStreams.clear();
-            document.getElementById('endCallSection').style.display = 'none';
-            
-            hideVideo();
-            
-            updateStatus('Anruf beendet', 'info');
         }
 
-        function checkIfAllCallsEnded() {
-            if (activeCalls.size === 0) {
-                document.getElementById('endCallSection').style.display = 'none';
-                hideVideo();
-                updateStatus('Bereit für neue Anrufe 😊', 'success');
+        function removeRemoteVideo() {
+            const remote = document.getElementById('remoteVideo');
+            if (remote) {
+                remote.remove();
             }
         }
 
-        function toggleOnlineStatus() {
-            if (activeCalls.size > 0) {
-                alert('Beende erst alle Anrufe!');
-                return;
-            }
-            
-            if (isOnline) {
-                isOnline = false;
-                
-                if (peer) {
-                    peer.disconnect();
-                }
-                
-                hideVideo();
-                
-                document.getElementById('statusBtn').innerHTML = 'Online gehen ▶️';
-                updateOnlineBadge();
-                updateStatus('Du bist jetzt offline', 'warning');
-                renderContacts();
-            } else {
-                isOnline = true;
-                
-                if (peer && peer.disconnected) {
-                    peer.reconnect();
-                }
-                
-                document.getElementById('statusBtn').innerHTML = 'Offline gehen ⏸️';
-                updateOnlineBadge();
-                updateStatus('Du bist jetzt online! 🎉', 'success');
-                renderContacts();
-            }
+        function resetUI() {
+            document.getElementById('status').textContent = 'Online';
+            document.getElementById('status').className = 'status online';
+            document.getElementById('callBtn').style.display = 'block';
+            document.getElementById('hangupBtn').style.display = 'none';
         }
 
         window.addEventListener('beforeunload', () => {

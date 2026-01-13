@@ -183,6 +183,85 @@
             color: white;
         }
         
+        /* Call Overlay - WhatsApp Style */
+        .call-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.95);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .call-overlay.active {
+            display: flex;
+        }
+        
+        .call-dialog {
+            text-align: center;
+            color: white;
+        }
+        
+        .call-dialog .avatar {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4em;
+            animation: ring 1s infinite;
+        }
+        
+        @keyframes ring {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        .call-dialog .caller-name {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+        
+        .call-dialog .call-status {
+            font-size: 1.2em;
+            color: #9ca3af;
+            margin-bottom: 40px;
+        }
+        
+        .call-actions {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+        }
+        
+        .call-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            font-size: 2em;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .call-btn.accept {
+            background: #22c55e;
+        }
+        
+        .call-btn.reject {
+            background: #ef4444;
+        }
+        
         /* Modal */
         .modal {
             display: none;
@@ -309,6 +388,35 @@
         </div>
     </div>
 
+    <!-- Incoming Call Overlay -->
+    <div class="call-overlay" id="incomingCallOverlay">
+        <div class="call-dialog">
+            <div class="avatar">
+                <span id="incomingAvatar">📞</span>
+            </div>
+            <div class="caller-name" id="incomingCallerName"></div>
+            <div class="call-status">Eingehender Videoanruf...</div>
+            <div class="call-actions">
+                <button class="call-btn reject" onclick="rejectIncomingCall()">✗</button>
+                <button class="call-btn accept" onclick="acceptIncomingCall()">✓</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Outgoing Call Overlay -->
+    <div class="call-overlay" id="outgoingCallOverlay">
+        <div class="call-dialog">
+            <div class="avatar">
+                <span id="outgoingAvatar">📞</span>
+            </div>
+            <div class="caller-name" id="outgoingCallerName"></div>
+            <div class="call-status">Rufe an...</div>
+            <div class="call-actions">
+                <button class="call-btn reject" onclick="cancelOutgoingCall()">✗</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Screen -->
     <div class="screen" id="mainScreen">
         <div class="container">
@@ -405,16 +513,31 @@
         const STORAGE_MY_NAME = 'videochat_my_name';
         const STORAGE_CONTACTS = 'videochat_contacts';
         
+        // Call States
+        const CALL_STATE = {
+            IDLE: 'idle',
+            OUTGOING: 'outgoing',
+            INCOMING: 'incoming',
+            CONNECTED: 'connected'
+        };
+        
         // State
         let peer = null;
         let myStream = null;
         let myName = '';
         let contacts = ['', '', '', '', ''];
         let currentCall = null;
+        let callState = CALL_STATE.IDLE;
         let activeContactIndex = -1;
+        let incomingCallObject = null;
         let remoteAudioElement = null;
+        let ringtoneAudio = null;
 
-        // Load saved data
+        function log(msg) {
+            console.log('[VIDEO-CHAT]', msg);
+        }
+
+        // Load/Save
         function loadData() {
             const saved = localStorage.getItem(STORAGE_CONTACTS);
             if (saved) {
@@ -431,8 +554,36 @@
             localStorage.setItem(STORAGE_CONTACTS, JSON.stringify(contacts));
         }
 
-        function log(msg) {
-            console.log('[VIDEO-CHAT]', msg);
+        // Ringtone
+        function playRingtone() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                gainNode.gain.value = 0.3;
+                oscillator.start();
+                
+                ringtoneAudio = { oscillator, audioContext };
+                
+                setTimeout(() => stopRingtone(), 30000); // Max 30 Sekunden
+            } catch (e) {
+                log('Ringtone error: ' + e);
+            }
+        }
+
+        function stopRingtone() {
+            if (ringtoneAudio) {
+                try { 
+                    ringtoneAudio.oscillator.stop(); 
+                    ringtoneAudio.audioContext.close();
+                } catch(e) {}
+                ringtoneAudio = null;
+            }
         }
 
         // Start App
@@ -473,16 +624,7 @@
 
                 peer.on('call', (call) => {
                     log('📞 Eingehender Anruf von: ' + call.peer);
-                    
-                    // Check if contact is in list
-                    const contactIndex = contacts.indexOf(call.peer);
-                    if (contactIndex === -1) {
-                        log('⚠ Anruf von unbekanntem Kontakt blockiert');
-                        return;
-                    }
-                    
-                    // Auto-accept
-                    acceptIncomingCall(call, contactIndex);
+                    handleIncomingCall(call);
                 });
 
                 peer.on('error', (err) => {
@@ -499,143 +641,232 @@
             }
         }
 
+        // Update UI
         function updateUI() {
             loadData();
             
-            // Update my name
+            // My name
             document.getElementById('myContactName').textContent = myName;
             
-            // Update contacts
+            // Contacts
             contacts.forEach((contact, index) => {
                 const card = document.getElementById('contact' + index);
                 const nameDiv = card.querySelector('.contact-name');
                 const emojiDiv = card.querySelector('.contact-emoji');
                 
+                // Reset classes
+                card.classList.remove('empty', 'online', 'calling');
+                
                 if (contact && contact.trim() !== '') {
                     nameDiv.textContent = contact;
-                    card.classList.remove('empty');
-                    card.classList.add('online');
-                    emojiDiv.textContent = '😊';
+                    
+                    if (callState === CALL_STATE.CONNECTED && activeContactIndex === index) {
+                        // In call with this contact
+                        card.classList.add('calling');
+                        emojiDiv.textContent = '📞';
+                    } else {
+                        // Available
+                        card.classList.add('online');
+                        emojiDiv.textContent = '😊';
+                    }
                 } else {
+                    // Empty
                     nameDiv.textContent = 'leer';
                     card.classList.add('empty');
-                    card.classList.remove('online', 'calling');
                     emojiDiv.textContent = '😴';
                 }
             });
-            
-            // Update active call state
-            if (activeContactIndex !== -1) {
-                const card = document.getElementById('contact' + activeContactIndex);
-                card.classList.remove('online');
-                card.classList.add('calling');
-                const emojiDiv = card.querySelector('.contact-emoji');
-                emojiDiv.textContent = '📞';
-            }
         }
 
+        // Contact Click
         function contactClick(index) {
             const contact = contacts[index];
             
             if (!contact || contact.trim() === '') {
-                log('Leerer Kontakt angeklickt');
                 return;
             }
             
-            // If calling this contact, hang up
-            if (activeContactIndex === index) {
-                hangup();
-                return;
-            }
-            
-            // If calling another contact, can't call
-            if (activeContactIndex !== -1) {
+            if (callState === CALL_STATE.CONNECTED && activeContactIndex === index) {
+                // Hang up current call
+                endCall();
+            } else if (callState === CALL_STATE.IDLE) {
+                // Start new call
+                startOutgoingCall(contact, index);
+            } else {
+                // Busy
                 alert('Du bist bereits in einem Anruf!');
-                return;
             }
-            
-            // Start call
-            startCall(contact, index);
         }
 
-        function startCall(contactName, index) {
-            log('Rufe an: ' + contactName);
+        // Outgoing Call
+        function startOutgoingCall(contactName, index) {
+            log('Starte Anruf mit: ' + contactName);
             
+            callState = CALL_STATE.OUTGOING;
+            activeContactIndex = index;
+            
+            // Show outgoing call overlay
+            document.getElementById('outgoingCallerName').textContent = contactName;
+            document.getElementById('outgoingCallOverlay').classList.add('active');
+            
+            // Start call
             currentCall = peer.call(contactName, myStream);
             
             if (!currentCall) {
                 log('❌ Anruf fehlgeschlagen');
-                alert('Anruf fehlgeschlagen!');
+                alert('Anruf fehlgeschlagen! Person vielleicht nicht online?');
+                resetCallState();
                 return;
             }
 
-            activeContactIndex = index;
-            updateUI();
-            log('✓ Anruf gestartet');
+            log('✓ Anruf gesendet');
             
             currentCall.on('stream', (remoteStream) => {
-                log('✓ Remote Stream empfangen');
+                log('✓ Anruf verbunden!');
+                stopRingtone();
+                document.getElementById('outgoingCallOverlay').classList.remove('active');
+                callState = CALL_STATE.CONNECTED;
+                updateUI();
                 addRemoteVideo(contactName, remoteStream);
             });
 
             currentCall.on('close', () => {
                 log('Anruf beendet');
-                removeRemoteVideo();
-                destroyAudioElement();
-                activeContactIndex = -1;
-                updateUI();
+                endCall();
             });
 
             currentCall.on('error', (err) => {
                 log('❌ Call Error: ' + err);
                 alert('Anruf-Fehler!');
-                activeContactIndex = -1;
-                updateUI();
+                resetCallState();
             });
+            
+            // Timeout after 30 seconds
+            setTimeout(() => {
+                if (callState === CALL_STATE.OUTGOING) {
+                    log('⏱ Anruf Timeout');
+                    cancelOutgoingCall();
+                    alert('Kein Antwort - Person vielleicht nicht erreichbar?');
+                }
+            }, 30000);
         }
 
-        function acceptIncomingCall(call, index) {
-            log('Nehme Anruf an von: ' + call.peer);
-            
-            if (activeContactIndex !== -1) {
-                log('⚠ Bereits in Anruf, lehne ab');
+        function cancelOutgoingCall() {
+            log('Abbruch ausgehender Anruf');
+            if (currentCall) {
+                currentCall.close();
+            }
+            document.getElementById('outgoingCallOverlay').classList.remove('active');
+            resetCallState();
+        }
+
+        // Incoming Call
+        function handleIncomingCall(call) {
+            // Check if contact is in list
+            const contactIndex = contacts.indexOf(call.peer);
+            if (contactIndex === -1) {
+                log('⚠ Anruf von unbekanntem Kontakt blockiert: ' + call.peer);
                 return;
             }
             
-            currentCall = call;
-            activeContactIndex = index;
-            updateUI();
+            // Check if busy
+            if (callState !== CALL_STATE.IDLE) {
+                log('⚠ Beschäftigt, lehne Anruf ab');
+                return;
+            }
+            
+            callState = CALL_STATE.INCOMING;
+            activeContactIndex = contactIndex;
+            incomingCallObject = call;
+            
+            // Show incoming call overlay
+            document.getElementById('incomingCallerName').textContent = call.peer;
+            document.getElementById('incomingCallOverlay').classList.add('active');
+            
+            // Play ringtone
+            playRingtone();
+            
+            // Auto-reject after 30 seconds
+            setTimeout(() => {
+                if (callState === CALL_STATE.INCOMING) {
+                    log('⏱ Eingehender Anruf Timeout');
+                    rejectIncomingCall();
+                }
+            }, 30000);
+        }
+
+        function acceptIncomingCall() {
+            log('Nehme Anruf an');
+            stopRingtone();
+            document.getElementById('incomingCallOverlay').classList.remove('active');
+            
+            if (!incomingCallObject) {
+                resetCallState();
+                return;
+            }
+            
+            currentCall = incomingCallObject;
+            incomingCallObject = null;
             
             currentCall.answer(myStream);
+            callState = CALL_STATE.CONNECTED;
+            updateUI();
+            
             log('✓ Anruf beantwortet');
             
             currentCall.on('stream', (remoteStream) => {
                 log('✓ Remote Stream empfangen');
-                addRemoteVideo(call.peer, remoteStream);
+                addRemoteVideo(currentCall.peer, remoteStream);
             });
 
             currentCall.on('close', () => {
-                log('Anruf beendet');
-                removeRemoteVideo();
-                destroyAudioElement();
-                activeContactIndex = -1;
-                updateUI();
+                log('Anruf beendet vom Anrufer');
+                endCall();
+            });
+
+            currentCall.on('error', (err) => {
+                log('❌ Call Error: ' + err);
+                endCall();
             });
         }
 
-        function hangup() {
+        function rejectIncomingCall() {
+            log('Lehne Anruf ab');
+            stopRingtone();
+            document.getElementById('incomingCallOverlay').classList.remove('active');
+            incomingCallObject = null;
+            resetCallState();
+        }
+
+        // End Call
+        function endCall() {
+            log('Beende Anruf');
+            
             if (currentCall) {
                 currentCall.close();
                 currentCall = null;
             }
+            
             removeRemoteVideo();
             destroyAudioElement();
-            activeContactIndex = -1;
-            updateUI();
-            log('Aufgelegt');
+            stopRingtone();
+            
+            // Hide overlays
+            document.getElementById('incomingCallOverlay').classList.remove('active');
+            document.getElementById('outgoingCallOverlay').classList.remove('active');
+            
+            resetCallState();
         }
 
-        // Video functions (NICHT ÄNDERN!)
+        function resetCallState() {
+            callState = CALL_STATE.IDLE;
+            activeContactIndex = -1;
+            currentCall = null;
+            incomingCallObject = null;
+            updateUI();
+        }
+
+        // Video Functions (NICHT ÄNDERN!)
         function addRemoteVideo(name, stream) {
             removeRemoteVideo();
             
@@ -696,7 +927,7 @@
                 log('✓ Auto-play erfolgreich');
                 overlay.remove();
             }).catch(err => {
-                log('⚠ Auto-play blockiert (erwartet)');
+                log('⚠ Auto-play blockiert - User muss klicken');
             });
         }
 
@@ -751,7 +982,6 @@
                 return;
             }
             
-            // Check if name changed
             if (newMyName !== myName) {
                 alert('Namensänderung erfordert Neustart!');
                 myName = newMyName;
@@ -760,7 +990,6 @@
                 return;
             }
             
-            // Save contacts
             for (let i = 0; i < 5; i++) {
                 contacts[i] = document.getElementById('editContact' + i).value.trim();
             }
@@ -779,6 +1008,7 @@
             if (peer) {
                 peer.destroy();
             }
+            stopRingtone();
         });
 
         // Init

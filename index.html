@@ -19,7 +19,6 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     color: #333;
-    /* Verhindert Pull-to-Refresh auf Mobile */
     overscroll-behavior-y: contain;
 }
 .container {
@@ -27,7 +26,6 @@ body {
     margin: 0 auto;
     padding: 15px;
 }
-/* Contact Grid */
 .contacts-section {
     background: white;
     padding: 15px;
@@ -53,7 +51,6 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    /* Fix für Mobile Tap Highlight */
     -webkit-tap-highlight-color: transparent;
 }
 .contact-card.me {
@@ -99,7 +96,6 @@ body {
     color: #6b7280;
     margin-top: 3px;
 }
-/* Video Section */
 .video-section {
     background: white;
     padding: 15px;
@@ -115,12 +111,12 @@ body {
     border-radius: 12px;
     overflow: hidden;
     position: relative;
-    aspect-ratio: 3/4; /* Besseres Format für Mobile */
+    aspect-ratio: 3/4;
 }
 .video-box video {
     width: 100%;
     height: 100%;
-    object-fit: cover; /* Füllt die Box komplett aus */
+    object-fit: cover;
     display: block;
     background: #000;
 }
@@ -136,7 +132,6 @@ body {
     z-index: 50;
     font-size: 0.9em;
 }
-/* Buttons */
 .btn {
     width: 100%;
     padding: 15px;
@@ -153,7 +148,6 @@ body {
     background: linear-gradient(135deg, #60a5fa, #3b82f6);
     color: white;
 }
-/* Call Overlay */
 .call-overlay {
     display: none;
     position: fixed;
@@ -222,7 +216,6 @@ body {
 .call-btn.reject {
     background: #ef4444;
 }
-/* Modal */
 .modal {
     display: none;
     position: fixed;
@@ -276,7 +269,6 @@ body {
     background: linear-gradient(135deg, #9ca3af, #6b7280);
     color: white;
 }
-/* Setup Screen */
 .setup-screen {
     background: white;
     padding: 30px;
@@ -464,9 +456,9 @@ let currentCall = null;
 let callState = CALL_STATE.IDLE;
 let activeContactIndex = -1;
 let incomingCallObject = null;
-let remoteAudioElement = null; // Für Ton
+let remoteAudioElement = null;
 let ringtoneAudio = null;
-let remoteVideoElement = null; // Für Bild
+let remoteVideoElement = null;
 let onlineCheckInterval = null;
 let isInBackground = false;
 let notificationPermissionGranted = false;
@@ -476,7 +468,6 @@ function log(msg) {
     console.log('[VIDEO-CHAT]', msg);
 }
 
-// STILLES AUDIO IM HINTERGRUND
 function createSilentAudio() {
     if (silentAudioContext) return;
     try {
@@ -503,7 +494,6 @@ function stopSilentAudio() {
     }
 }
 
-// BACKGROUND DETECTION
 function setupBackgroundDetection() {
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
@@ -523,7 +513,6 @@ function handleAppGoingBackground() {
     if (isInBackground) return;
     isInBackground = true;
     
-    // Kamera stoppen um "Orange Dot" zu entfernen
     if (callState === CALL_STATE.IDLE && myStream) {
         myStream.getTracks().forEach(track => track.stop());
         myStream = null;
@@ -536,7 +525,6 @@ async function handleAppComingForeground() {
     isInBackground = false;
     stopSilentAudio();
     
-    // Stream neu anfordern
     if (!myStream && callState === CALL_STATE.IDLE) {
         try {
             await getMyStream();
@@ -550,7 +538,7 @@ async function getMyStream() {
     try {
         myStream = await navigator.mediaDevices.getUserMedia({ 
             video: {
-                facingMode: 'user', // Frontkamera
+                facingMode: 'user',
                 width: { ideal: 640 },
                 height: { ideal: 480 }
             }, 
@@ -572,7 +560,6 @@ async function getMyStream() {
     }
 }
 
-// NOTIFICATIONS
 async function requestNotificationPermission() {
     if (!('Notification' in window)) return false;
     if (Notification.permission === 'granted') {
@@ -601,7 +588,6 @@ function showNotification(title, body) {
     } catch (e) { log('Notif Error: ' + e); }
 }
 
-// RESET
 function fullStateReset() {
     log('🧹 State-Reset');
     if (currentCall) { try { currentCall.close(); } catch(e) {} currentCall = null; }
@@ -617,7 +603,6 @@ function fullStateReset() {
     updateUI();
 }
 
-// ONLINE CHECK
 function checkContactOnline(contactName, index) {
     if (!contactName || contactName.trim() === '' || !peer) {
         contactsOnlineStatus[index] = false;
@@ -672,7 +657,6 @@ function stopOnlineCheck() {
     if (onlineCheckInterval) { clearInterval(onlineCheckInterval); onlineCheckInterval = null; }
 }
 
-// DATA STORAGE
 function loadData() {
     const saved = localStorage.getItem(STORAGE_CONTACTS);
     if (saved) contacts = JSON.parse(saved);
@@ -685,27 +669,54 @@ function saveData() {
     localStorage.setItem(STORAGE_CONTACTS, JSON.stringify(contacts));
 }
 
-// RINGTONE
 function playRingtone() {
     try {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
-        oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
-        oscillator.frequency.value = 800;
-        oscillator.type = 'sine';
-        gainNode.gain.value = 0.3;
-        oscillator.start();
-        ringtoneAudio = { oscillator, audioContext };
+        gainNode.gain.value = 0.2;
+        
+        const freq1 = 440;
+        const freq2 = 480;
+        
+        let startTime = audioContext.currentTime;
+        
+        function playTone(frequency, start, duration) {
+            const osc = audioContext.createOscillator();
+            const toneGain = audioContext.createGain();
+            osc.connect(toneGain);
+            toneGain.connect(gainNode);
+            osc.frequency.value = frequency;
+            osc.type = 'sine';
+            
+            toneGain.gain.setValueAtTime(0, start);
+            toneGain.gain.linearRampToValueAtTime(1, start + 0.05);
+            toneGain.gain.setValueAtTime(1, start + duration - 0.05);
+            toneGain.gain.linearRampToValueAtTime(0, start + duration);
+            
+            osc.start(start);
+            osc.stop(start + duration);
+        }
+        
+        for (let i = 0; i < 10; i++) {
+            const cycleStart = startTime + (i * 3);
+            playTone(freq1, cycleStart, 0.4);
+            playTone(freq2, cycleStart, 0.4);
+            playTone(freq1, cycleStart + 0.6, 0.4);
+            playTone(freq2, cycleStart + 0.6, 0.4);
+        }
+        
+        ringtoneAudio = { audioContext };
+        
         setTimeout(() => stopRingtone(), 30000);
-    } catch (e) { log('Ringtone error: ' + e); }
+    } catch (e) { 
+        log('Ringtone error: ' + e); 
+    }
 }
 
 function stopRingtone() {
     if (ringtoneAudio) {
         try { 
-            ringtoneAudio.oscillator.stop(); 
             ringtoneAudio.audioContext.close();
         } catch(e) {}
         ringtoneAudio = null;
@@ -719,7 +730,6 @@ function hideAllOverlays() {
     if (outgoing) { outgoing.style.display = 'none'; outgoing.classList.remove('active'); }
 }
 
-// INIT
 window.addEventListener('load', () => {
     loadData();
     if (myName && myName.trim() !== '') {
@@ -767,6 +777,14 @@ function initializePeer() {
     });
     peer.on('call', (call) => {
         handleIncomingCall(call);
+    });
+    peer.on('connection', (conn) => {
+        log('📡 Online-Check empfangen von: ' + conn.peer);
+        try {
+            conn.on('open', () => {
+                conn.close();
+            });
+        } catch(e) {}
     });
     peer.on('error', (err) => {
         if (err.type === 'unavailable-id') {
@@ -822,7 +840,6 @@ function contactClick(index) {
     }
 }
 
-// CALL LOGIC
 function startOutgoingCall(contactName, index) {
     callState = CALL_STATE.OUTGOING;
     activeContactIndex = index;
@@ -886,11 +903,8 @@ async function handleIncomingCall(call) {
 
 function acceptIncomingCall() {
     stopRingtone();
-    
-    // 1. Erst Overlay verstecken
     hideAllOverlays();
     
-    // 2. Kleines Timeout für iOS Rendering Engine
     setTimeout(() => {
         if (!incomingCallObject) { fullStateReset(); return; }
         
@@ -908,15 +922,12 @@ function acceptIncomingCall() {
         });
         
         currentCall.on('close', endCall);
-    }, 50); // 50ms Delay wichtig für Safari
+    }, 50);
 }
 
 function rejectIncomingCall() { fullStateReset(); }
 function endCall() { fullStateReset(); setTimeout(checkAllContactsOnline, 1000); }
 
-// ============================================================
-// WICHTIGSTER TEIL: iOS SAFARI FIX FÜR REMOTE VIDEO
-// ============================================================
 function addRemoteVideo(name, stream) {
     log('Füge Video hinzu: ' + name);
     removeRemoteVideo();
@@ -930,22 +941,11 @@ function addRemoteVideo(name, stream) {
     
     const video = document.createElement('video');
     video.id = 'remoteVideoElement';
-    
-    // 1. Attribute für iOS Inline Playback (Lowercase für HTML Attribut)
     video.setAttribute('playsinline', '');
     video.setAttribute('webkit-playsinline', '');
-    
-    // 2. JavaScript Property (CamelCase wichtig!)
     video.playsInline = true;
-    
-    // 3. Autoplay aktivieren
     video.autoplay = true;
-    
-    // 4. CRITICAL FIX: Video Muted setzen! 
-    // Safari spielt Autoplay-Videos nur ab, wenn sie stumm sind.
-    // Der Ton kommt über das separate Audio-Element unten.
     video.muted = true;
-    
     video.srcObject = stream;
     
     const label = document.createElement('div');
@@ -957,16 +957,12 @@ function addRemoteVideo(name, stream) {
     grid.appendChild(box);
     
     remoteVideoElement = video;
-    
-    // 5. Separates Audio für den Ton
     createAudioElement(stream);
     
-    // 6. Play erzwingen mit Promise-Handling
     const playPromise = video.play();
     if (playPromise !== undefined) {
         playPromise.catch(error => {
             log('Auto-Play Error: ' + error);
-            // Fallback
             video.muted = true;
             video.play();
         });
@@ -975,12 +971,10 @@ function addRemoteVideo(name, stream) {
 
 function createAudioElement(stream) {
     destroyAudioElement();
-    // Separates Audio-Objekt für den Ton (unmuted)
     remoteAudioElement = document.createElement('audio');
     remoteAudioElement.autoplay = true;
     remoteAudioElement.srcObject = stream;
     remoteAudioElement.volume = 1.0;
-    // Audio muss nicht ins DOM, um zu spielen, aber wir speichern Referenz
     document.body.appendChild(remoteAudioElement); 
     remoteAudioElement.play().catch(e => log('Audio Play Error: ' + e));
 }
@@ -1009,7 +1003,6 @@ function removeRemoteVideo() {
     document.getElementById('videoGrid').classList.remove('two-videos');
 }
 
-// MODAL & CLEANUP
 function openEditModal() {
     loadData();
     document.getElementById('editMyName').value = myName;

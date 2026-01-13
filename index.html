@@ -513,6 +513,8 @@ function handleAppGoingBackground() {
     if (isInBackground) return;
     isInBackground = true;
     
+    stopOnlineCheck();
+    
     if (callState === CALL_STATE.IDLE && myStream) {
         myStream.getTracks().forEach(track => track.stop());
         myStream = null;
@@ -531,6 +533,11 @@ async function handleAppComingForeground() {
         } catch (err) {
             log('Fehler beim Reaktivieren: ' + err.message);
         }
+    }
+    
+    if (peer && peer.id) {
+        setTimeout(() => checkAllContactsOnline(), 500);
+        setTimeout(() => startOnlineCheck(), 1000);
     }
 }
 
@@ -672,51 +679,23 @@ function saveData() {
 function playRingtone() {
     try {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
+        oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
+        oscillator.frequency.value = 440;
+        oscillator.type = 'sine';
         gainNode.gain.value = 0.2;
-        
-        const freq1 = 440;
-        const freq2 = 480;
-        
-        let startTime = audioContext.currentTime;
-        
-        function playTone(frequency, start, duration) {
-            const osc = audioContext.createOscillator();
-            const toneGain = audioContext.createGain();
-            osc.connect(toneGain);
-            toneGain.connect(gainNode);
-            osc.frequency.value = frequency;
-            osc.type = 'sine';
-            
-            toneGain.gain.setValueAtTime(0, start);
-            toneGain.gain.linearRampToValueAtTime(1, start + 0.05);
-            toneGain.gain.setValueAtTime(1, start + duration - 0.05);
-            toneGain.gain.linearRampToValueAtTime(0, start + duration);
-            
-            osc.start(start);
-            osc.stop(start + duration);
-        }
-        
-        for (let i = 0; i < 10; i++) {
-            const cycleStart = startTime + (i * 3);
-            playTone(freq1, cycleStart, 0.4);
-            playTone(freq2, cycleStart, 0.4);
-            playTone(freq1, cycleStart + 0.6, 0.4);
-            playTone(freq2, cycleStart + 0.6, 0.4);
-        }
-        
-        ringtoneAudio = { audioContext };
-        
+        oscillator.start();
+        ringtoneAudio = { oscillator, audioContext };
         setTimeout(() => stopRingtone(), 30000);
-    } catch (e) { 
-        log('Ringtone error: ' + e); 
-    }
+    } catch (e) { log('Ringtone error: ' + e); }
 }
 
 function stopRingtone() {
     if (ringtoneAudio) {
         try { 
+            ringtoneAudio.oscillator.stop(); 
             ringtoneAudio.audioContext.close();
         } catch(e) {}
         ringtoneAudio = null;

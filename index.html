@@ -125,6 +125,7 @@
             height: auto;
             display: block;
             min-height: 200px;
+            background: #000;
         }
         
         .video-label {
@@ -136,33 +137,24 @@
             padding: 8px 15px;
             border-radius: 8px;
             font-weight: bold;
+            z-index: 50;
         }
         
-        .unmute-overlay {
+        .unmute-button {
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 0, 0, 0.9);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #ef4444;
+            color: white;
+            padding: 20px 40px;
+            border: none;
+            border-radius: 15px;
+            font-size: 1.5em;
+            font-weight: bold;
             cursor: pointer;
-            z-index: 100;
-        }
-        
-        .unmute-overlay h2 {
-            color: white;
-            font-size: 3em;
-            margin-bottom: 10px;
-        }
-        
-        .unmute-overlay p {
-            color: white;
-            font-size: 1.3em;
-            text-align: center;
+            z-index: 60;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
         }
         
         /* Buttons */
@@ -194,7 +186,7 @@
             background: rgba(0,0,0,0.95);
             justify-content: center;
             align-items: center;
-            z-index: 1000;
+            z-index: 2000;
         }
         
         .call-overlay.active {
@@ -392,7 +384,7 @@
     <div class="call-overlay" id="incomingCallOverlay">
         <div class="call-dialog">
             <div class="avatar">
-                <span id="incomingAvatar">📞</span>
+                <span>📞</span>
             </div>
             <div class="caller-name" id="incomingCallerName"></div>
             <div class="call-status">Eingehender Videoanruf...</div>
@@ -407,7 +399,7 @@
     <div class="call-overlay" id="outgoingCallOverlay">
         <div class="call-dialog">
             <div class="avatar">
-                <span id="outgoingAvatar">📞</span>
+                <span>📞</span>
             </div>
             <div class="caller-name" id="outgoingCallerName"></div>
             <div class="call-status">Rufe an...</div>
@@ -457,7 +449,7 @@
             <div class="video-section">
                 <div class="video-grid" id="videoGrid">
                     <div class="video-box">
-                        <video id="myVideo" autoplay muted playsinline></video>
+                        <video id="myVideo" autoplay muted playsinline webkit-playsinline></video>
                         <div class="video-label">Du</div>
                     </div>
                 </div>
@@ -532,6 +524,7 @@
         let incomingCallObject = null;
         let remoteAudioElement = null;
         let ringtoneAudio = null;
+        let remoteVideoElement = null;
 
         function log(msg) {
             console.log('[VIDEO-CHAT]', msg);
@@ -570,7 +563,7 @@
                 
                 ringtoneAudio = { oscillator, audioContext };
                 
-                setTimeout(() => stopRingtone(), 30000); // Max 30 Sekunden
+                setTimeout(() => stopRingtone(), 30000);
             } catch (e) {
                 log('Ringtone error: ' + e);
             }
@@ -586,7 +579,95 @@
             }
         }
 
-        // Start App
+        function hideAllOverlays() {
+            document.getElementById('incomingCallOverlay').classList.remove('active');
+            document.getElementById('outgoingCallOverlay').classList.remove('active');
+            log('✓ Alle Overlays versteckt');
+        }
+
+        // Safari iOS Fix: Video weiterlaufen lassen
+        function setupSafariVideoFix(video) {
+            // Verhindere Pause bei Visibility Change
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    log('⚠ Tab versteckt - versuche Video weiterlaufen zu lassen');
+                } else {
+                    log('✓ Tab wieder sichtbar - stelle Video sicher');
+                    if (video && video.paused) {
+                        video.play().catch(e => log('Play nach Visibility: ' + e));
+                    }
+                }
+            });
+
+            // Verhindere Pause Event
+            video.addEventListener('pause', (e) => {
+                if (callState === CALL_STATE.CONNECTED) {
+                    log('⚠ Video pausiert - starte neu');
+                    setTimeout(() => {
+                        video.play().catch(err => log('Resume error: ' + err));
+                    }, 100);
+                }
+            });
+
+            // Stelle sicher dass Video läuft
+            video.addEventListener('loadedmetadata', () => {
+                log('✓ Video Metadaten geladen');
+                video.play().catch(e => log('Initial play: ' + e));
+            });
+
+            // Watchdog: Prüfe alle 2 Sekunden ob Video läuft
+            const watchdog = setInterval(() => {
+                if (callState === CALL_STATE.CONNECTED && video && video.paused) {
+                    log('⚠ Watchdog: Video pausiert - starte neu');
+                    video.play().catch(() => {});
+                }
+                if (callState !== CALL_STATE.CONNECTED) {
+                    clearInterval(watchdog);
+                }
+            }, 2000);
+        }
+
+        // Start App - mit Auto-Login
+        window.addEventListener('load', () => {
+            loadData();
+            
+            // Auto-Login wenn Name gespeichert
+            if (myName && myName.trim() !== '') {
+                log('Auto-Login mit gespeichertem Namen: ' + myName);
+                document.getElementById('setupMyName').value = myName;
+                // Auto-Start nach kurzer Verzögerung
+                setTimeout(() => {
+                    autoStartApp();
+                }, 500);
+            }
+        });
+
+        async function autoStartApp() {
+            try {
+                log('Auto-Start App...');
+                myStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                log('✓ Stream erhalten');
+                document.getElementById('myVideo').srcObject = myStream;
+                
+                initializePeer();
+                
+                document.getElementById('setupScreen').classList.remove('active');
+                document.getElementById('mainScreen').classList.add('active');
+                
+            } catch (err) {
+                log('Auto-Start fehlgeschlagen: ' + err.message);
+                // Zeige Setup Screen
+            }
+        }
+
         async function startApp() {
             const name = document.getElementById('setupMyName').value.trim();
             
@@ -612,28 +693,10 @@
                 log('✓ Stream erhalten');
                 document.getElementById('myVideo').srcObject = myStream;
                 
-                log('Initialisiere Peer...');
-                peer = new Peer(name);
+                initializePeer();
                 
-                peer.on('open', (id) => {
-                    log('✓ Peer online: ' + id);
-                    document.getElementById('setupScreen').classList.remove('active');
-                    document.getElementById('mainScreen').classList.add('active');
-                    updateUI();
-                });
-
-                peer.on('call', (call) => {
-                    log('📞 Eingehender Anruf von: ' + call.peer);
-                    handleIncomingCall(call);
-                });
-
-                peer.on('error', (err) => {
-                    log('❌ Peer Error: ' + err.type);
-                    if (err.type === 'unavailable-id') {
-                        alert('Name bereits vergeben! Bitte wähle einen anderen.');
-                        location.reload();
-                    }
-                });
+                document.getElementById('setupScreen').classList.remove('active');
+                document.getElementById('mainScreen').classList.add('active');
                 
             } catch (err) {
                 log('❌ Media Error: ' + err.message);
@@ -641,36 +704,54 @@
             }
         }
 
+        function initializePeer() {
+            log('Initialisiere Peer...');
+            peer = new Peer(myName);
+            
+            peer.on('open', (id) => {
+                log('✓ Peer online: ' + id);
+                updateUI();
+            });
+
+            peer.on('call', (call) => {
+                log('📞 Eingehender Anruf von: ' + call.peer);
+                handleIncomingCall(call);
+            });
+
+            peer.on('error', (err) => {
+                log('❌ Peer Error: ' + err.type);
+                if (err.type === 'unavailable-id') {
+                    alert('Name bereits vergeben! Bitte wähle einen anderen.');
+                    localStorage.removeItem(STORAGE_MY_NAME);
+                    location.reload();
+                }
+            });
+        }
+
         // Update UI
         function updateUI() {
             loadData();
             
-            // My name
             document.getElementById('myContactName').textContent = myName;
             
-            // Contacts
             contacts.forEach((contact, index) => {
                 const card = document.getElementById('contact' + index);
                 const nameDiv = card.querySelector('.contact-name');
                 const emojiDiv = card.querySelector('.contact-emoji');
                 
-                // Reset classes
                 card.classList.remove('empty', 'online', 'calling');
                 
                 if (contact && contact.trim() !== '') {
                     nameDiv.textContent = contact;
                     
                     if (callState === CALL_STATE.CONNECTED && activeContactIndex === index) {
-                        // In call with this contact
                         card.classList.add('calling');
                         emojiDiv.textContent = '📞';
                     } else {
-                        // Available
                         card.classList.add('online');
                         emojiDiv.textContent = '😊';
                     }
                 } else {
-                    // Empty
                     nameDiv.textContent = 'leer';
                     card.classList.add('empty');
                     emojiDiv.textContent = '😴';
@@ -678,7 +759,6 @@
             });
         }
 
-        // Contact Click
         function contactClick(index) {
             const contact = contacts[index];
             
@@ -687,29 +767,23 @@
             }
             
             if (callState === CALL_STATE.CONNECTED && activeContactIndex === index) {
-                // Hang up current call
                 endCall();
             } else if (callState === CALL_STATE.IDLE) {
-                // Start new call
                 startOutgoingCall(contact, index);
             } else {
-                // Busy
                 alert('Du bist bereits in einem Anruf!');
             }
         }
 
-        // Outgoing Call
         function startOutgoingCall(contactName, index) {
             log('Starte Anruf mit: ' + contactName);
             
             callState = CALL_STATE.OUTGOING;
             activeContactIndex = index;
             
-            // Show outgoing call overlay
             document.getElementById('outgoingCallerName').textContent = contactName;
             document.getElementById('outgoingCallOverlay').classList.add('active');
             
-            // Start call
             currentCall = peer.call(contactName, myStream);
             
             if (!currentCall) {
@@ -719,15 +793,17 @@
                 return;
             }
 
-            log('✓ Anruf gesendet');
+            log('✓ Anruf gesendet, warte auf Antwort...');
             
             currentCall.on('stream', (remoteStream) => {
-                log('✓ Anruf verbunden!');
-                stopRingtone();
-                document.getElementById('outgoingCallOverlay').classList.remove('active');
+                log('✓ Stream empfangen - Person hat angenommen!');
+                hideAllOverlays();
                 callState = CALL_STATE.CONNECTED;
                 updateUI();
-                addRemoteVideo(contactName, remoteStream);
+                
+                setTimeout(() => {
+                    addRemoteVideo(contactName, remoteStream);
+                }, 200);
             });
 
             currentCall.on('close', () => {
@@ -741,12 +817,11 @@
                 resetCallState();
             });
             
-            // Timeout after 30 seconds
             setTimeout(() => {
                 if (callState === CALL_STATE.OUTGOING) {
                     log('⏱ Anruf Timeout');
                     cancelOutgoingCall();
-                    alert('Kein Antwort - Person vielleicht nicht erreichbar?');
+                    alert('Keine Antwort - Person vielleicht nicht erreichbar?');
                 }
             }, 30000);
         }
@@ -756,20 +831,17 @@
             if (currentCall) {
                 currentCall.close();
             }
-            document.getElementById('outgoingCallOverlay').classList.remove('active');
+            hideAllOverlays();
             resetCallState();
         }
 
-        // Incoming Call
         function handleIncomingCall(call) {
-            // Check if contact is in list
             const contactIndex = contacts.indexOf(call.peer);
             if (contactIndex === -1) {
                 log('⚠ Anruf von unbekanntem Kontakt blockiert: ' + call.peer);
                 return;
             }
             
-            // Check if busy
             if (callState !== CALL_STATE.IDLE) {
                 log('⚠ Beschäftigt, lehne Anruf ab');
                 return;
@@ -779,14 +851,11 @@
             activeContactIndex = contactIndex;
             incomingCallObject = call;
             
-            // Show incoming call overlay
             document.getElementById('incomingCallerName').textContent = call.peer;
             document.getElementById('incomingCallOverlay').classList.add('active');
             
-            // Play ringtone
             playRingtone();
             
-            // Auto-reject after 30 seconds
             setTimeout(() => {
                 if (callState === CALL_STATE.INCOMING) {
                     log('⏱ Eingehender Anruf Timeout');
@@ -798,7 +867,7 @@
         function acceptIncomingCall() {
             log('Nehme Anruf an');
             stopRingtone();
-            document.getElementById('incomingCallOverlay').classList.remove('active');
+            hideAllOverlays();
             
             if (!incomingCallObject) {
                 resetCallState();
@@ -812,11 +881,13 @@
             callState = CALL_STATE.CONNECTED;
             updateUI();
             
-            log('✓ Anruf beantwortet');
+            log('✓ Anruf beantwortet, warte auf Stream...');
             
             currentCall.on('stream', (remoteStream) => {
                 log('✓ Remote Stream empfangen');
-                addRemoteVideo(currentCall.peer, remoteStream);
+                setTimeout(() => {
+                    addRemoteVideo(currentCall.peer, remoteStream);
+                }, 200);
             });
 
             currentCall.on('close', () => {
@@ -833,12 +904,11 @@
         function rejectIncomingCall() {
             log('Lehne Anruf ab');
             stopRingtone();
-            document.getElementById('incomingCallOverlay').classList.remove('active');
+            hideAllOverlays();
             incomingCallObject = null;
             resetCallState();
         }
 
-        // End Call
         function endCall() {
             log('Beende Anruf');
             
@@ -850,11 +920,7 @@
             removeRemoteVideo();
             destroyAudioElement();
             stopRingtone();
-            
-            // Hide overlays
-            document.getElementById('incomingCallOverlay').classList.remove('active');
-            document.getElementById('outgoingCallOverlay').classList.remove('active');
-            
+            hideAllOverlays();
             resetCallState();
         }
 
@@ -866,8 +932,9 @@
             updateUI();
         }
 
-        // Video Functions (NICHT ÄNDERN!)
+        // Video Functions mit Safari Fix
         function addRemoteVideo(name, stream) {
+            log('Füge Remote-Video hinzu für: ' + name);
             removeRemoteVideo();
             
             const grid = document.getElementById('videoGrid');
@@ -881,54 +948,60 @@
             video.id = 'remoteVideoElement';
             video.autoplay = true;
             video.playsinline = true;
-            video.srcObject = stream;
+            video.setAttribute('webkit-playsinline', 'true');
+            video.setAttribute('x-webkit-airplay', 'allow');
             video.muted = false;
             video.volume = 1.0;
+            
+            // WICHTIG: Stream SOFORT setzen
+            video.srcObject = stream;
+            remoteVideoElement = video;
             
             const label = document.createElement('div');
             label.className = 'video-label';
             label.textContent = name;
             
-            box.appendChild(video);
-            box.appendChild(label);
-            
-            const overlay = document.createElement('div');
-            overlay.className = 'unmute-overlay';
-            overlay.innerHTML = `
-                <h2>🔊</h2>
-                <p>HIER KLICKEN<br>FÜR TON!</p>
-            `;
-            overlay.onclick = () => {
-                log('User aktiviert Audio...');
+            const unmuteBtn = document.createElement('button');
+            unmuteBtn.className = 'unmute-button';
+            unmuteBtn.textContent = '🔊 Ton aktivieren';
+            unmuteBtn.style.display = 'none';
+            unmuteBtn.onclick = () => {
+                log('User aktiviert Audio');
                 video.muted = false;
                 video.volume = 1.0;
                 video.play().then(() => {
                     log('✓ Video spielt mit Audio');
-                    overlay.remove();
-                }).catch(err => {
-                    log('❌ Play Error: ' + err.message);
-                });
+                    unmuteBtn.style.display = 'none';
+                }).catch(e => log('Play error: ' + e));
                 
                 if (remoteAudioElement) {
-                    remoteAudioElement.play().then(() => {
-                        log('✓ Audio Element spielt');
-                    }).catch(err => {
-                        log('❌ Audio Play Error: ' + err.message);
-                    });
+                    remoteAudioElement.play().catch(() => {});
                 }
             };
             
-            box.appendChild(overlay);
+            box.appendChild(video);
+            box.appendChild(label);
+            box.appendChild(unmuteBtn);
             grid.appendChild(box);
             
+            // Safari Fix aktivieren
+            setupSafariVideoFix(video);
+            
+            // Backup Audio Element
             createAudioElement(stream);
             
-            video.play().then(() => {
-                log('✓ Auto-play erfolgreich');
-                overlay.remove();
-            }).catch(err => {
-                log('⚠ Auto-play blockiert - User muss klicken');
-            });
+            // Erzwinge Play
+            setTimeout(() => {
+                const playPromise = video.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        log('✓ Auto-play erfolgreich (Safari)');
+                    }).catch(err => {
+                        log('⚠ Auto-play blockiert - zeige Button');
+                        unmuteBtn.style.display = 'block';
+                    });
+                }
+            }, 300);
         }
 
         function createAudioElement(stream) {
@@ -938,10 +1011,7 @@
             remoteAudioElement.autoplay = true;
             remoteAudioElement.srcObject = stream;
             remoteAudioElement.volume = 1.0;
-            
-            remoteAudioElement.play().catch(err => {
-                log('⚠ Audio Element blockiert');
-            });
+            remoteAudioElement.play().catch(() => {});
         }
 
         function destroyAudioElement() {
@@ -955,7 +1025,9 @@
             const remote = document.getElementById('remoteVideo');
             if (remote) {
                 remote.remove();
+                log('Remote-Video entfernt');
             }
+            remoteVideoElement = null;
             const grid = document.getElementById('videoGrid');
             grid.classList.remove('two-videos');
         }

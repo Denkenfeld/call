@@ -150,45 +150,6 @@
             z-index: 50;
         }
         
-        /* Minimized State */
-        .minimized-view {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: #000;
-            z-index: 3000;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            color: white;
-            padding: 30px;
-        }
-        
-        .minimized-view.active {
-            display: flex;
-        }
-        
-        .minimized-view h1 {
-            font-size: 3em;
-            margin-bottom: 20px;
-        }
-        
-        .minimized-view p {
-            font-size: 1.5em;
-            margin: 15px 0;
-            line-height: 1.6;
-        }
-        
-        .minimized-view .emoji {
-            font-size: 5em;
-            margin: 30px 0;
-            animation: pulse 2s infinite;
-        }
-        
         /* Buttons */
         .btn {
             width: 100%;
@@ -205,18 +166,6 @@
         .btn-primary {
             background: linear-gradient(135deg, #60a5fa, #3b82f6);
             color: white;
-        }
-        
-        .btn-minimize {
-            background: linear-gradient(135deg, #fbbf24, #f59e0b);
-            color: white;
-        }
-        
-        .btn-maximize {
-            background: linear-gradient(135deg, #4ade80, #22c55e);
-            color: white;
-            font-size: 1.3em;
-            padding: 20px;
         }
         
         /* Call Overlay */
@@ -424,20 +373,6 @@
         </div>
     </div>
 
-    <!-- Minimized View -->
-    <div class="minimized-view" id="minimizedView">
-        <div class="emoji">😴</div>
-        <h1>App läuft im Hintergrund</h1>
-        <p>Drücke jetzt den <strong>Home-Button</strong><br>oder wechsle zu einer anderen App</p>
-        <p style="font-size: 1.2em; color: #fbbf24; margin-top: 30px;">
-            ⚠️ Du bleibst erreichbar!<br>
-            Bei Anruf bekommst du eine Benachrichtigung
-        </p>
-        <button class="btn btn-maximize" onclick="maximizeApp()">
-            👁️ App wieder öffnen
-        </button>
-    </div>
-
     <!-- Incoming Call Overlay -->
     <div class="call-overlay" id="incomingCallOverlay">
         <div class="call-dialog">
@@ -513,11 +448,6 @@
                 </div>
             </div>
 
-            <!-- Minimize Button -->
-            <button class="btn btn-minimize" onclick="minimizeApp()" id="minimizeBtn">
-                App minimieren 😴
-            </button>
-
             <!-- Edit Button -->
             <button class="btn btn-primary" onclick="openEditModal()">Kontakte bearbeiten ✏️</button>
         </div>
@@ -587,12 +517,93 @@
         let ringtoneAudio = null;
         let remoteVideoElement = null;
         let onlineCheckInterval = null;
-        let isMinimized = false;
+        let isInBackground = false;
         let notificationPermissionGranted = false;
         let activeNotification = null;
 
         function log(msg) {
             console.log('[VIDEO-CHAT]', msg);
+        }
+
+        // AUTOMATISCHE HINTERGRUND-ERKENNUNG
+        function setupBackgroundDetection() {
+            // Visibility Change (Tab-Switch, Home-Button)
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    log('📱 App in Hintergrund');
+                    handleAppGoingBackground();
+                } else {
+                    log('👁️ App wieder im Vordergrund');
+                    handleAppComingForeground();
+                }
+            });
+
+            // Page Hide (zusätzlicher Event für iOS)
+            window.addEventListener('pagehide', () => {
+                log('📱 Page Hide - App in Hintergrund');
+                handleAppGoingBackground();
+            });
+
+            // Page Show
+            window.addEventListener('pageshow', () => {
+                log('👁️ Page Show - App im Vordergrund');
+                handleAppComingForeground();
+            });
+
+            // Blur (Fokus verloren)
+            window.addEventListener('blur', () => {
+                log('📱 Window Blur');
+                handleAppGoingBackground();
+            });
+
+            // Focus (Fokus zurück)
+            window.addEventListener('focus', () => {
+                log('👁️ Window Focus');
+                handleAppComingForeground();
+            });
+
+            log('✓ Automatische Hintergrund-Erkennung aktiviert');
+        }
+
+        function handleAppGoingBackground() {
+            if (isInBackground) return; // Bereits im Hintergrund
+            
+            isInBackground = true;
+            log('→ App läuft jetzt im Hintergrund');
+            
+            // NICHT im Call: Kamera/Mikro ausschalten (spart Akku)
+            if (callState === CALL_STATE.IDLE && myStream) {
+                myStream.getTracks().forEach(track => {
+                    track.enabled = false;
+                });
+                log('✓ Kamera/Mikro pausiert (Akku sparen)');
+            }
+            
+            // Bei aktivem Call: NICHT pausieren, Call läuft weiter
+            if (callState === CALL_STATE.CONNECTED) {
+                log('ℹ️ Call läuft weiter im Hintergrund');
+            }
+        }
+
+        function handleAppComingForeground() {
+            if (!isInBackground) return; // Bereits im Vordergrund
+            
+            isInBackground = false;
+            log('→ App wieder im Vordergrund');
+            
+            // Kamera/Mikro wieder aktivieren
+            if (myStream) {
+                myStream.getTracks().forEach(track => {
+                    track.enabled = true;
+                });
+                log('✓ Kamera/Mikro wieder aktiv');
+            }
+            
+            // Notification schließen
+            if (activeNotification) {
+                activeNotification.close();
+                activeNotification = null;
+            }
         }
 
         // Notifications
@@ -636,7 +647,6 @@
                 
                 activeNotification.onclick = () => {
                     window.focus();
-                    maximizeApp();
                     activeNotification.close();
                 };
                 
@@ -644,51 +654,6 @@
             } catch (e) {
                 log('Notification Error: ' + e);
             }
-        }
-
-        // Minimize/Maximize
-        function minimizeApp() {
-            if (callState === CALL_STATE.CONNECTED) {
-                alert('Beende erst den Anruf!');
-                return;
-            }
-            
-            log('App minimieren...');
-            isMinimized = true;
-            
-            // Kamera/Mikro ausschalten
-            if (myStream) {
-                myStream.getTracks().forEach(track => {
-                    track.enabled = false;
-                });
-            }
-            
-            // Zeige Minimized View
-            document.getElementById('minimizedView').classList.add('active');
-            
-            log('✓ App minimiert - User soll jetzt Home-Button drücken');
-        }
-
-        function maximizeApp() {
-            log('App maximieren...');
-            isMinimized = false;
-            
-            // Kamera/Mikro wieder an
-            if (myStream) {
-                myStream.getTracks().forEach(track => {
-                    track.enabled = true;
-                });
-            }
-            
-            // Verstecke Minimized View
-            document.getElementById('minimizedView').classList.remove('active');
-            
-            if (activeNotification) {
-                activeNotification.close();
-                activeNotification = null;
-            }
-            
-            log('✓ App wieder aktiv');
         }
 
         // State Reset
@@ -839,7 +804,6 @@
         }
 
         function hideAllOverlays() {
-            // WICHTIG: Overlay sofort verstecken
             const incoming = document.getElementById('incomingCallOverlay');
             const outgoing = document.getElementById('outgoingCallOverlay');
             
@@ -847,8 +811,8 @@
             if (outgoing) outgoing.classList.remove('active');
             
             // Force repaint für Safari
-            incoming.offsetHeight;
-            outgoing.offsetHeight;
+            if (incoming) incoming.offsetHeight;
+            if (outgoing) outgoing.offsetHeight;
         }
 
         window.addEventListener('load', () => {
@@ -883,6 +847,9 @@
                 
                 // Notification Permission
                 await requestNotificationPermission();
+                
+                // Hintergrund-Erkennung aktivieren
+                setupBackgroundDetection();
                 
                 document.getElementById('setupScreen').classList.remove('active');
                 document.getElementById('mainScreen').classList.add('active');
@@ -921,6 +888,9 @@
                 
                 // Notification Permission
                 await requestNotificationPermission();
+                
+                // Hintergrund-Erkennung aktivieren
+                setupBackgroundDetection();
                 
                 document.getElementById('setupScreen').classList.remove('active');
                 document.getElementById('mainScreen').classList.add('active');
@@ -991,11 +961,6 @@
             
             if (!contact || contact.trim() === '') {
                 return;
-            }
-            
-            // Wenn minimiert, erst maximieren
-            if (isMinimized) {
-                maximizeApp();
             }
             
             if (!contactsOnlineStatus[index] && callState !== CALL_STATE.CONNECTED) {
@@ -1078,9 +1043,8 @@
                 return;
             }
             
-            // Wenn minimiert, automatisch maximieren + Notification
-            if (isMinimized) {
-                maximizeApp();
+            // Notification wenn im Hintergrund
+            if (isInBackground) {
                 showNotification('📞 Eingehender Anruf!', 'Von: ' + call.peer);
             }
             

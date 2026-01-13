@@ -67,6 +67,13 @@
             cursor: default;
         }
         
+        .contact-card.offline {
+            background: #e5e7eb;
+            border-color: #9ca3af;
+            cursor: default;
+            opacity: 0.7;
+        }
+        
         .contact-card.online {
             background: #d1fae5;
             border-color: #22c55e;
@@ -140,21 +147,24 @@
             z-index: 50;
         }
         
-        .unmute-button {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #ef4444;
-            color: white;
-            padding: 20px 40px;
-            border: none;
+        /* Minimized State */
+        .minimized-banner {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            padding: 20px;
             border-radius: 15px;
+            margin-bottom: 15px;
+            text-align: center;
+            color: white;
+        }
+        
+        .minimized-banner h2 {
             font-size: 1.5em;
-            font-weight: bold;
-            cursor: pointer;
-            z-index: 60;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+            margin-bottom: 10px;
+        }
+        
+        .minimized-banner p {
+            font-size: 1.1em;
+            margin-bottom: 15px;
         }
         
         /* Buttons */
@@ -175,7 +185,17 @@
             color: white;
         }
         
-        /* Call Overlay - WhatsApp Style */
+        .btn-minimize {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: white;
+        }
+        
+        .btn-maximize {
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            color: white;
+        }
+        
+        /* Call Overlay */
         .call-overlay {
             display: none;
             position: fixed;
@@ -412,8 +432,15 @@
     <!-- Main Screen -->
     <div class="screen" id="mainScreen">
         <div class="container">
+            <!-- Minimized Banner -->
+            <div class="minimized-banner" id="minimizedBanner" style="display:none;">
+                <h2>😴 App minimiert</h2>
+                <p>Du wirst benachrichtigt wenn jemand anruft</p>
+                <button class="btn btn-maximize" onclick="maximizeApp()">App öffnen 👁️</button>
+            </div>
+
             <!-- Contacts Section -->
-            <div class="contacts-section">
+            <div class="contacts-section" id="contactsSection">
                 <div class="contact-grid">
                     <!-- My Contact -->
                     <div class="contact-card me">
@@ -446,7 +473,7 @@
             </div>
 
             <!-- Video Section -->
-            <div class="video-section">
+            <div class="video-section" id="videoSection">
                 <div class="video-grid" id="videoGrid">
                     <div class="video-box">
                         <video id="myVideo" autoplay muted playsinline webkit-playsinline></video>
@@ -454,6 +481,9 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Minimize Button -->
+            <button class="btn btn-minimize" onclick="minimizeApp()" id="minimizeBtn">App minimieren 😴</button>
 
             <!-- Edit Button -->
             <button class="btn btn-primary" onclick="openEditModal()">Kontakte bearbeiten ✏️</button>
@@ -518,6 +548,7 @@
         let myStream = null;
         let myName = '';
         let contacts = ['', '', '', '', ''];
+        let contactsOnlineStatus = [false, false, false, false, false];
         let currentCall = null;
         let callState = CALL_STATE.IDLE;
         let activeContactIndex = -1;
@@ -525,9 +556,197 @@
         let remoteAudioElement = null;
         let ringtoneAudio = null;
         let remoteVideoElement = null;
+        let notificationPermissionGranted = false;
+        let isMinimized = false;
+        let activeNotification = null;
+        let onlineCheckInterval = null;
 
         function log(msg) {
             console.log('[VIDEO-CHAT]', msg);
+        }
+
+        // Online Status Check
+        function checkContactOnline(contactName, index) {
+            if (!contactName || contactName.trim() === '' || !peer) {
+                contactsOnlineStatus[index] = false;
+                return Promise.resolve(false);
+            }
+
+            return new Promise((resolve) => {
+                // Timeout nach 3 Sekunden
+                const timeout = setTimeout(() => {
+                    if (conn) {
+                        conn.close();
+                    }
+                    contactsOnlineStatus[index] = false;
+                    resolve(false);
+                }, 3000);
+
+                try {
+                    const conn = peer.connect(contactName, { reliable: false });
+                    
+                    conn.on('open', () => {
+                        clearTimeout(timeout);
+                        contactsOnlineStatus[index] = true;
+                        conn.close();
+                        resolve(true);
+                    });
+
+                    conn.on('error', () => {
+                        clearTimeout(timeout);
+                        contactsOnlineStatus[index] = false;
+                        resolve(false);
+                    });
+                } catch (e) {
+                    clearTimeout(timeout);
+                    contactsOnlineStatus[index] = false;
+                    resolve(false);
+                }
+            });
+        }
+
+        async function checkAllContactsOnline() {
+            if (!peer || !peer.id) return;
+            
+            log('🔍 Prüfe Online-Status...');
+            
+            const checks = contacts.map((contact, index) => {
+                if (contact && contact.trim() !== '') {
+                    return checkContactOnline(contact, index);
+                } else {
+                    contactsOnlineStatus[index] = false;
+                    return Promise.resolve(false);
+                }
+            });
+
+            await Promise.all(checks);
+            updateUI();
+        }
+
+        function startOnlineCheck() {
+            // Sofort checken
+            checkAllContactsOnline();
+            
+            // Dann alle 10 Sekunden
+            if (onlineCheckInterval) {
+                clearInterval(onlineCheckInterval);
+            }
+            
+            onlineCheckInterval = setInterval(() => {
+                checkAllContactsOnline();
+            }, 10000);
+            
+            log('✓ Online-Check gestartet (alle 10 Sekunden)');
+        }
+
+        function stopOnlineCheck() {
+            if (onlineCheckInterval) {
+                clearInterval(onlineCheckInterval);
+                onlineCheckInterval = null;
+                log('Online-Check gestoppt');
+            }
+        }
+
+        // Notifications
+        async function requestNotificationPermission() {
+            if (!('Notification' in window)) {
+                log('Browser unterstützt keine Notifications');
+                return false;
+            }
+            
+            if (Notification.permission === 'granted') {
+                notificationPermissionGranted = true;
+                log('✓ Notification Permission bereits erteilt');
+                return true;
+            }
+            
+            if (Notification.permission !== 'denied') {
+                const permission = await Notification.requestPermission();
+                notificationPermissionGranted = permission === 'granted';
+                log('Notification Permission: ' + permission);
+                return notificationPermissionGranted;
+            }
+            
+            return false;
+        }
+
+        function showNotification(title, body, tag = 'videochat') {
+            if (!notificationPermissionGranted) {
+                log('⚠ Keine Notification Permission');
+                return;
+            }
+            
+            try {
+                if (activeNotification) {
+                    activeNotification.close();
+                }
+                
+                activeNotification = new Notification(title, {
+                    body: body,
+                    icon: '📞',
+                    tag: tag,
+                    requireInteraction: true,
+                    vibrate: [200, 100, 200]
+                });
+                
+                activeNotification.onclick = () => {
+                    window.focus();
+                    maximizeApp();
+                    activeNotification.close();
+                };
+                
+                log('✓ Notification angezeigt');
+            } catch (e) {
+                log('Notification Error: ' + e);
+            }
+        }
+
+        // Minimize/Maximize
+        function minimizeApp() {
+            if (callState === CALL_STATE.CONNECTED) {
+                alert('Beende erst den Anruf bevor du minimierst!');
+                return;
+            }
+            
+            log('App minimieren...');
+            isMinimized = true;
+            
+            if (myStream) {
+                myStream.getTracks().forEach(track => {
+                    track.enabled = false;
+                });
+            }
+            
+            document.getElementById('minimizedBanner').style.display = 'block';
+            document.getElementById('contactsSection').style.display = 'none';
+            document.getElementById('videoSection').style.display = 'none';
+            document.getElementById('minimizeBtn').style.display = 'none';
+            
+            log('✓ App minimiert - läuft im Hintergrund');
+            showNotification('😴 App minimiert', 'Du wirst benachrichtigt wenn jemand anruft', 'minimized');
+        }
+
+        function maximizeApp() {
+            log('App maximieren...');
+            isMinimized = false;
+            
+            if (myStream) {
+                myStream.getTracks().forEach(track => {
+                    track.enabled = true;
+                });
+            }
+            
+            document.getElementById('minimizedBanner').style.display = 'none';
+            document.getElementById('contactsSection').style.display = 'block';
+            document.getElementById('videoSection').style.display = 'block';
+            document.getElementById('minimizeBtn').style.display = 'block';
+            
+            if (activeNotification) {
+                activeNotification.close();
+                activeNotification = null;
+            }
+            
+            log('✓ App wieder aktiv');
         }
 
         // Load/Save
@@ -582,43 +801,26 @@
         function hideAllOverlays() {
             document.getElementById('incomingCallOverlay').classList.remove('active');
             document.getElementById('outgoingCallOverlay').classList.remove('active');
-            log('✓ Alle Overlays versteckt');
         }
 
-        // Safari iOS Fix: Video weiterlaufen lassen
+        // Safari Video Fix
         function setupSafariVideoFix(video) {
-            // Verhindere Pause bei Visibility Change
             document.addEventListener('visibilitychange', () => {
-                if (document.hidden) {
-                    log('⚠ Tab versteckt - versuche Video weiterlaufen zu lassen');
-                } else {
-                    log('✓ Tab wieder sichtbar - stelle Video sicher');
-                    if (video && video.paused) {
-                        video.play().catch(e => log('Play nach Visibility: ' + e));
-                    }
+                if (!document.hidden && video && video.paused && callState === CALL_STATE.CONNECTED) {
+                    video.play().catch(e => log('Resume play: ' + e));
                 }
             });
 
-            // Verhindere Pause Event
             video.addEventListener('pause', (e) => {
                 if (callState === CALL_STATE.CONNECTED) {
-                    log('⚠ Video pausiert - starte neu');
                     setTimeout(() => {
-                        video.play().catch(err => log('Resume error: ' + err));
+                        video.play().catch(() => {});
                     }, 100);
                 }
             });
 
-            // Stelle sicher dass Video läuft
-            video.addEventListener('loadedmetadata', () => {
-                log('✓ Video Metadaten geladen');
-                video.play().catch(e => log('Initial play: ' + e));
-            });
-
-            // Watchdog: Prüfe alle 2 Sekunden ob Video läuft
             const watchdog = setInterval(() => {
                 if (callState === CALL_STATE.CONNECTED && video && video.paused) {
-                    log('⚠ Watchdog: Video pausiert - starte neu');
                     video.play().catch(() => {});
                 }
                 if (callState !== CALL_STATE.CONNECTED) {
@@ -627,15 +829,13 @@
             }, 2000);
         }
 
-        // Start App - mit Auto-Login
+        // Auto-Login
         window.addEventListener('load', () => {
             loadData();
             
-            // Auto-Login wenn Name gespeichert
             if (myName && myName.trim() !== '') {
-                log('Auto-Login mit gespeichertem Namen: ' + myName);
+                log('Auto-Login: ' + myName);
                 document.getElementById('setupMyName').value = myName;
-                // Auto-Start nach kurzer Verzögerung
                 setTimeout(() => {
                     autoStartApp();
                 }, 500);
@@ -644,7 +844,7 @@
 
         async function autoStartApp() {
             try {
-                log('Auto-Start App...');
+                log('Auto-Start...');
                 myStream = await navigator.mediaDevices.getUserMedia({ 
                     video: true, 
                     audio: {
@@ -654,17 +854,16 @@
                     }
                 });
                 
-                log('✓ Stream erhalten');
                 document.getElementById('myVideo').srcObject = myStream;
-                
                 initializePeer();
+                
+                await requestNotificationPermission();
                 
                 document.getElementById('setupScreen').classList.remove('active');
                 document.getElementById('mainScreen').classList.add('active');
                 
             } catch (err) {
                 log('Auto-Start fehlgeschlagen: ' + err.message);
-                // Zeige Setup Screen
             }
         }
 
@@ -680,7 +879,6 @@
             saveData();
 
             try {
-                log('Fordere Medien an...');
                 myStream = await navigator.mediaDevices.getUserMedia({ 
                     video: true, 
                     audio: {
@@ -690,48 +888,45 @@
                     }
                 });
                 
-                log('✓ Stream erhalten');
                 document.getElementById('myVideo').srcObject = myStream;
-                
                 initializePeer();
+                
+                await requestNotificationPermission();
                 
                 document.getElementById('setupScreen').classList.remove('active');
                 document.getElementById('mainScreen').classList.add('active');
                 
             } catch (err) {
-                log('❌ Media Error: ' + err.message);
                 alert('Fehler beim Zugriff auf Kamera/Mikrofon!');
             }
         }
 
         function initializePeer() {
-            log('Initialisiere Peer...');
             peer = new Peer(myName);
             
             peer.on('open', (id) => {
                 log('✓ Peer online: ' + id);
                 updateUI();
+                startOnlineCheck();
             });
 
             peer.on('call', (call) => {
-                log('📞 Eingehender Anruf von: ' + call.peer);
+                log('📞 Eingehender Anruf: ' + call.peer);
                 handleIncomingCall(call);
             });
 
             peer.on('error', (err) => {
                 log('❌ Peer Error: ' + err.type);
                 if (err.type === 'unavailable-id') {
-                    alert('Name bereits vergeben! Bitte wähle einen anderen.');
+                    alert('Name bereits vergeben!');
                     localStorage.removeItem(STORAGE_MY_NAME);
                     location.reload();
                 }
             });
         }
 
-        // Update UI
         function updateUI() {
             loadData();
-            
             document.getElementById('myContactName').textContent = myName;
             
             contacts.forEach((contact, index) => {
@@ -739,19 +934,26 @@
                 const nameDiv = card.querySelector('.contact-name');
                 const emojiDiv = card.querySelector('.contact-emoji');
                 
-                card.classList.remove('empty', 'online', 'calling');
+                card.classList.remove('empty', 'online', 'offline', 'calling');
                 
                 if (contact && contact.trim() !== '') {
                     nameDiv.textContent = contact;
                     
                     if (callState === CALL_STATE.CONNECTED && activeContactIndex === index) {
+                        // Im Anruf
                         card.classList.add('calling');
                         emojiDiv.textContent = '📞';
-                    } else {
+                    } else if (contactsOnlineStatus[index]) {
+                        // Online
                         card.classList.add('online');
                         emojiDiv.textContent = '😊';
+                    } else {
+                        // Offline
+                        card.classList.add('offline');
+                        emojiDiv.textContent = '😴';
                     }
                 } else {
+                    // Leer
                     nameDiv.textContent = 'leer';
                     card.classList.add('empty');
                     emojiDiv.textContent = '😴';
@@ -766,6 +968,16 @@
                 return;
             }
             
+            // Prüfe ob Kontakt online ist
+            if (!contactsOnlineStatus[index] && callState !== CALL_STATE.CONNECTED) {
+                alert('Dieser Kontakt ist gerade nicht online!');
+                return;
+            }
+            
+            if (isMinimized) {
+                maximizeApp();
+            }
+            
             if (callState === CALL_STATE.CONNECTED && activeContactIndex === index) {
                 endCall();
             } else if (callState === CALL_STATE.IDLE) {
@@ -776,7 +988,9 @@
         }
 
         function startOutgoingCall(contactName, index) {
-            log('Starte Anruf mit: ' + contactName);
+            if (isMinimized) {
+                maximizeApp();
+            }
             
             callState = CALL_STATE.OUTGOING;
             activeContactIndex = index;
@@ -787,47 +1001,40 @@
             currentCall = peer.call(contactName, myStream);
             
             if (!currentCall) {
-                log('❌ Anruf fehlgeschlagen');
-                alert('Anruf fehlgeschlagen! Person vielleicht nicht online?');
+                alert('Anruf fehlgeschlagen!');
                 resetCallState();
                 return;
             }
-
-            log('✓ Anruf gesendet, warte auf Antwort...');
             
             currentCall.on('stream', (remoteStream) => {
-                log('✓ Stream empfangen - Person hat angenommen!');
+                log('✓ Verbunden!');
                 hideAllOverlays();
                 callState = CALL_STATE.CONNECTED;
                 updateUI();
                 
                 setTimeout(() => {
                     addRemoteVideo(contactName, remoteStream);
-                }, 200);
+                }, 100);
             });
 
             currentCall.on('close', () => {
-                log('Anruf beendet');
                 endCall();
             });
 
             currentCall.on('error', (err) => {
-                log('❌ Call Error: ' + err);
                 alert('Anruf-Fehler!');
                 resetCallState();
             });
             
             setTimeout(() => {
                 if (callState === CALL_STATE.OUTGOING) {
-                    log('⏱ Anruf Timeout');
                     cancelOutgoingCall();
-                    alert('Keine Antwort - Person vielleicht nicht erreichbar?');
+                    alert('Keine Antwort!');
                 }
             }, 30000);
         }
 
         function cancelOutgoingCall() {
-            log('Abbruch ausgehender Anruf');
             if (currentCall) {
                 currentCall.close();
             }
@@ -838,18 +1045,27 @@
         function handleIncomingCall(call) {
             const contactIndex = contacts.indexOf(call.peer);
             if (contactIndex === -1) {
-                log('⚠ Anruf von unbekanntem Kontakt blockiert: ' + call.peer);
+                log('⚠ Unbekannter Anruf blockiert');
                 return;
             }
             
             if (callState !== CALL_STATE.IDLE) {
-                log('⚠ Beschäftigt, lehne Anruf ab');
+                log('⚠ Beschäftigt');
                 return;
             }
             
             callState = CALL_STATE.INCOMING;
             activeContactIndex = contactIndex;
             incomingCallObject = call;
+            
+            if (isMinimized) {
+                log('📱 App minimiert - zeige Notification');
+                showNotification(
+                    '📞 Eingehender Anruf!', 
+                    'Von: ' + call.peer + ' - Klicke um anzunehmen',
+                    'incoming-call'
+                );
+            }
             
             document.getElementById('incomingCallerName').textContent = call.peer;
             document.getElementById('incomingCallOverlay').classList.add('active');
@@ -858,15 +1074,18 @@
             
             setTimeout(() => {
                 if (callState === CALL_STATE.INCOMING) {
-                    log('⏱ Eingehender Anruf Timeout');
                     rejectIncomingCall();
                 }
             }, 30000);
         }
 
         function acceptIncomingCall() {
-            log('Nehme Anruf an');
             stopRingtone();
+            
+            if (isMinimized) {
+                maximizeApp();
+            }
+            
             hideAllOverlays();
             
             if (!incomingCallObject) {
@@ -881,37 +1100,31 @@
             callState = CALL_STATE.CONNECTED;
             updateUI();
             
-            log('✓ Anruf beantwortet, warte auf Stream...');
-            
             currentCall.on('stream', (remoteStream) => {
                 log('✓ Remote Stream empfangen');
                 setTimeout(() => {
                     addRemoteVideo(currentCall.peer, remoteStream);
-                }, 200);
+                }, 100);
             });
 
             currentCall.on('close', () => {
-                log('Anruf beendet vom Anrufer');
-                endCall();
-            });
-
-            currentCall.on('error', (err) => {
-                log('❌ Call Error: ' + err);
                 endCall();
             });
         }
 
         function rejectIncomingCall() {
-            log('Lehne Anruf ab');
             stopRingtone();
             hideAllOverlays();
             incomingCallObject = null;
             resetCallState();
+            
+            if (activeNotification) {
+                activeNotification.close();
+                activeNotification = null;
+            }
         }
 
         function endCall() {
-            log('Beende Anruf');
-            
             if (currentCall) {
                 currentCall.close();
                 currentCall = null;
@@ -932,9 +1145,9 @@
             updateUI();
         }
 
-        // Video Functions mit Safari Fix
+        // Video
         function addRemoteVideo(name, stream) {
-            log('Füge Remote-Video hinzu für: ' + name);
+            log('Füge Video hinzu: ' + name);
             removeRemoteVideo();
             
             const grid = document.getElementById('videoGrid');
@@ -945,15 +1158,11 @@
             box.id = 'remoteVideo';
             
             const video = document.createElement('video');
-            video.id = 'remoteVideoElement';
             video.autoplay = true;
             video.playsinline = true;
             video.setAttribute('webkit-playsinline', 'true');
-            video.setAttribute('x-webkit-airplay', 'allow');
             video.muted = false;
             video.volume = 1.0;
-            
-            // WICHTIG: Stream SOFORT setzen
             video.srcObject = stream;
             remoteVideoElement = video;
             
@@ -961,47 +1170,18 @@
             label.className = 'video-label';
             label.textContent = name;
             
-            const unmuteBtn = document.createElement('button');
-            unmuteBtn.className = 'unmute-button';
-            unmuteBtn.textContent = '🔊 Ton aktivieren';
-            unmuteBtn.style.display = 'none';
-            unmuteBtn.onclick = () => {
-                log('User aktiviert Audio');
-                video.muted = false;
-                video.volume = 1.0;
-                video.play().then(() => {
-                    log('✓ Video spielt mit Audio');
-                    unmuteBtn.style.display = 'none';
-                }).catch(e => log('Play error: ' + e));
-                
-                if (remoteAudioElement) {
-                    remoteAudioElement.play().catch(() => {});
-                }
-            };
-            
             box.appendChild(video);
             box.appendChild(label);
-            box.appendChild(unmuteBtn);
             grid.appendChild(box);
             
-            // Safari Fix aktivieren
             setupSafariVideoFix(video);
-            
-            // Backup Audio Element
             createAudioElement(stream);
             
-            // Erzwinge Play
-            setTimeout(() => {
-                const playPromise = video.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        log('✓ Auto-play erfolgreich (Safari)');
-                    }).catch(err => {
-                        log('⚠ Auto-play blockiert - zeige Button');
-                        unmuteBtn.style.display = 'block';
-                    });
-                }
-            }, 300);
+            setTimeout(() => video.play().catch(() => {}), 50);
+            setTimeout(() => video.play().catch(() => {}), 200);
+            setTimeout(() => video.play().catch(() => {}), 500);
+            
+            log('✓ Video hinzugefügt');
         }
 
         function createAudioElement(stream) {
@@ -1025,11 +1205,9 @@
             const remote = document.getElementById('remoteVideo');
             if (remote) {
                 remote.remove();
-                log('Remote-Video entfernt');
             }
             remoteVideoElement = null;
-            const grid = document.getElementById('videoGrid');
-            grid.classList.remove('two-videos');
+            document.getElementById('videoGrid').classList.remove('two-videos');
         }
 
         // Edit Modal
@@ -1069,11 +1247,14 @@
             saveData();
             updateUI();
             closeEditModal();
-            log('Kontakte gespeichert');
+            
+            // Online-Status neu checken
+            checkAllContactsOnline();
         }
 
         // Cleanup
         window.addEventListener('beforeunload', () => {
+            stopOnlineCheck();
             if (myStream) {
                 myStream.getTracks().forEach(track => track.stop());
             }
@@ -1083,7 +1264,6 @@
             stopRingtone();
         });
 
-        // Init
         loadData();
     </script>
 </body>

@@ -701,6 +701,7 @@
             const el = document.getElementById('status');
             el.textContent = message;
             el.className = 'status-bar ' + type;
+            console.log('[STATUS]', message);
         }
 
         function updateOnlineBadge() {
@@ -872,8 +873,14 @@
                         autoGainControl: true
                     }
                 });
-                console.log('✓ Kamera-Berechtigung erhalten');
-                // Stream ist da, aber noch nicht sichtbar
+                
+                const videoTracks = myStream.getVideoTracks();
+                const audioTracks = myStream.getAudioTracks();
+                
+                console.log('✓ Stream erhalten:');
+                console.log('  Video Tracks:', videoTracks.length, videoTracks.map(t => t.label));
+                console.log('  Audio Tracks:', audioTracks.length, audioTracks.map(t => t.label));
+                
                 return myStream;
             } catch (err) {
                 console.error('Kamera-Fehler:', err);
@@ -890,9 +897,11 @@
             document.getElementById('myVideo').style.display = 'block';
             document.getElementById('myVideoPlaceholder').style.display = 'none';
             
-            // Video-Tracks aktivieren
-            myStream.getVideoTracks().forEach(track => track.enabled = true);
-            myStream.getAudioTracks().forEach(track => track.enabled = true);
+            // NUR Video aktivieren, Audio bleibt immer an!
+            myStream.getVideoTracks().forEach(track => {
+                track.enabled = true;
+                console.log('Video Track aktiviert:', track.label);
+            });
             
             videoVisible = true;
             console.log('✓ Video angezeigt');
@@ -902,14 +911,22 @@
             if (!videoVisible) return;
             if (!myStream) return;
             
-            // Video-Tracks deaktivieren (aber nicht stoppen!)
-            myStream.getVideoTracks().forEach(track => track.enabled = false);
+            // NUR Video deaktivieren, Audio läuft weiter!
+            myStream.getVideoTracks().forEach(track => {
+                track.enabled = false;
+                console.log('Video Track deaktiviert:', track.label);
+            });
+            
+            // Audio bleibt aktiviert!
+            myStream.getAudioTracks().forEach(track => {
+                console.log('Audio Track bleibt aktiv:', track.label, track.enabled);
+            });
             
             document.getElementById('myVideo').style.display = 'none';
             document.getElementById('myVideoPlaceholder').style.display = 'flex';
             
             videoVisible = false;
-            console.log('✓ Video versteckt (Tracks bleiben aktiv)');
+            console.log('✓ Video versteckt (Audio läuft weiter)');
         }
 
         function startChat() {
@@ -937,7 +954,6 @@
             
             renderContacts();
             
-            // Fordere Kamera-Berechtigung NUR EINMAL an
             requestCameraPermission()
                 .then(() => {
                     initializePeer(myName);
@@ -992,7 +1008,7 @@
             });
 
             peer.on('error', err => {
-                console.error('Fehler:', err);
+                console.error('Peer Fehler:', err);
                 
                 if (err.type === 'unavailable-id') {
                     updateStatus('Fehler: Name schon vergeben!', 'error');
@@ -1019,15 +1035,14 @@
             const call = incomingCall;
             incomingCall = null;
             
-            // Zeige Video an
             showVideo();
             
-            // Beantworte mit bestehendem Stream
+            console.log('Beantworte Anruf mit Stream:', myStream.getTracks().map(t => `${t.kind}: ${t.label}`));
+            
             call.answer(myStream);
-            console.log('✓ Anruf beantwortet');
             
             call.on('stream', remoteStream => {
-                console.log('✓ Remote Stream empfangen');
+                console.log('✓ Remote Stream empfangen:', remoteStream.getTracks().map(t => `${t.kind}: ${t.label} (enabled: ${t.enabled})`));
                 addRemoteVideo(call.peer, remoteStream);
                 activeCalls.set(call.peer, call);
                 remoteStreams.set(call.peer, remoteStream);
@@ -1038,11 +1053,15 @@
             });
 
             call.on('close', () => {
-                console.log('Anruf geschlossen');
+                console.log('Anruf beendet');
                 removeRemoteVideo(call.peer);
                 activeCalls.delete(call.peer);
                 remoteStreams.delete(call.peer);
                 checkIfAllCallsEnded();
+            });
+
+            call.on('error', (err) => {
+                console.error('Call error:', err);
             });
         }
 
@@ -1069,14 +1088,14 @@
                 return;
             }
             
-            // Zeige Video an
             showVideo();
             
             const displayName = getContactDisplayName(contactId);
             updateStatus('Rufe ' + displayName + ' an... 📞', 'info');
             
+            console.log('Starte Anruf mit Stream:', myStream.getTracks().map(t => `${t.kind}: ${t.label} (enabled: ${t.enabled})`));
+            
             const call = peer.call(contactId, myStream);
-            console.log('✓ Anruf gestartet');
             
             if (!call) {
                 updateStatus('Fehler beim Anrufen', 'error');
@@ -1086,7 +1105,7 @@
             activeCalls.set(contactId, call);
             
             call.on('stream', remoteStream => {
-                console.log('✓ Remote Stream empfangen');
+                console.log('✓ Remote Stream empfangen:', remoteStream.getTracks().map(t => `${t.kind}: ${t.label} (enabled: ${t.enabled})`));
                 addRemoteVideo(contactId, remoteStream);
                 remoteStreams.set(contactId, remoteStream);
                 updateStatus('Verbunden mit ' + displayName + ' 🎉', 'success');
@@ -1101,7 +1120,7 @@
             });
 
             call.on('close', () => {
-                console.log('Anruf geschlossen');
+                console.log('Anruf beendet');
                 removeRemoteVideo(contactId);
                 activeCalls.delete(contactId);
                 remoteStreams.delete(contactId);
@@ -1137,6 +1156,8 @@
             const grid = document.getElementById('videoGrid');
             const displayName = getContactDisplayName(peerId);
             
+            console.log(`Erstelle Video Element für ${peerId}:`, stream.getTracks().map(t => `${t.kind}: ${t.label}`));
+            
             const videoCard = document.createElement('div');
             videoCard.className = 'video-card';
             videoCard.id = 'video-' + peerId;
@@ -1145,8 +1166,12 @@
             video.autoplay = true;
             video.playsinline = true;
             video.srcObject = stream;
+            
+            // WICHTIG: Audio MUSS aktiviert sein!
             video.muted = false;
             video.volume = 1.0;
+            
+            console.log(`Video Settings: muted=${video.muted}, volume=${video.volume}`);
             
             const label = document.createElement('div');
             label.className = 'video-label';
@@ -1161,7 +1186,25 @@
             videoCard.appendChild(audioIndicator);
             grid.appendChild(videoCard);
             
-            video.play().catch(err => console.error('Video play error:', err));
+            // Force play mit User-Interaktion
+            const playPromise = video.play();
+            if (playPromise !== undefined) {
+                playPromise
+                    .then(() => {
+                        console.log(`✓ Video spielt für ${peerId}`);
+                        console.log(`  Audio Tracks im Stream:`, stream.getAudioTracks().map(t => `${t.label} (enabled: ${t.enabled})`));
+                    })
+                    .catch(err => {
+                        console.error(`Video play error für ${peerId}:`, err);
+                        // Bei Autoplay-Block: User muss klicken
+                        if (err.name === 'NotAllowedError') {
+                            console.log('Autoplay blockiert - füge Click-Handler hinzu');
+                            videoCard.addEventListener('click', () => {
+                                video.play();
+                            }, { once: true });
+                        }
+                    });
+            }
         }
 
         function removeRemoteVideo(peerId) {
@@ -1181,7 +1224,6 @@
             remoteStreams.clear();
             document.getElementById('endCallSection').style.display = 'none';
             
-            // Verstecke Video (aber behalte Stream)
             hideVideo();
             
             updateStatus('Anruf beendet', 'info');

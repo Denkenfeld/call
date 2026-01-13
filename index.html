@@ -3,8 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-
     <title>📞 Video Chat für Kinder</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
@@ -316,6 +314,17 @@
             font-weight: bold;
         }
         
+        .audio-indicator {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 15px;
+            font-size: 1.5em;
+        }
+        
         /* Call Overlay */
         .call-overlay {
             display: none;
@@ -608,6 +617,7 @@
                         </div>
                         <video id="myVideo" autoplay muted playsinline style="display:none;"></video>
                         <div class="video-label">Du</div>
+                        <div class="audio-indicator">🔇</div>
                     </div>
                 </div>
             </div>
@@ -670,7 +680,7 @@
         let remoteStreams = new Map();
         let incomingCall = null;
         let isOnline = false;
-        let cameraActive = false;
+        let videoVisible = false;
         let contacts = [];
         let audioContext = null;
         let ringtoneOscillator = null;
@@ -849,31 +859,57 @@
             }
         }
 
-        async function startCamera() {
-            if (cameraActive) return myStream;
+        async function requestCameraPermission() {
+            if (myStream) return myStream;
             
             try {
-                myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                document.getElementById('myVideo').srcObject = myStream;
-                document.getElementById('myVideo').style.display = 'block';
-                document.getElementById('myVideoPlaceholder').style.display = 'none';
-                cameraActive = true;
+                updateStatus('Bitte erlaube Kamera-Zugriff... 📹', 'info');
+                myStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                console.log('✓ Kamera-Berechtigung erhalten');
+                // Stream ist da, aber noch nicht sichtbar
                 return myStream;
             } catch (err) {
                 console.error('Kamera-Fehler:', err);
-                alert('Fehler beim Zugriff auf Kamera!');
+                alert('Fehler: Bitte erlaube den Zugriff auf Kamera und Mikrofon!');
                 throw err;
             }
         }
 
-        function stopCamera() {
-            if (myStream) {
-                myStream.getTracks().forEach(track => track.stop());
-                myStream = null;
-            }
+        function showVideo() {
+            if (videoVisible) return;
+            if (!myStream) return;
+            
+            document.getElementById('myVideo').srcObject = myStream;
+            document.getElementById('myVideo').style.display = 'block';
+            document.getElementById('myVideoPlaceholder').style.display = 'none';
+            
+            // Video-Tracks aktivieren
+            myStream.getVideoTracks().forEach(track => track.enabled = true);
+            myStream.getAudioTracks().forEach(track => track.enabled = true);
+            
+            videoVisible = true;
+            console.log('✓ Video angezeigt');
+        }
+
+        function hideVideo() {
+            if (!videoVisible) return;
+            if (!myStream) return;
+            
+            // Video-Tracks deaktivieren (aber nicht stoppen!)
+            myStream.getVideoTracks().forEach(track => track.enabled = false);
+            
             document.getElementById('myVideo').style.display = 'none';
             document.getElementById('myVideoPlaceholder').style.display = 'flex';
-            cameraActive = false;
+            
+            videoVisible = false;
+            console.log('✓ Video versteckt (Tracks bleiben aktiv)');
         }
 
         function startChat() {
@@ -900,7 +936,15 @@
             document.getElementById('chatScreen').classList.add('active');
             
             renderContacts();
-            initializePeer(myName);
+            
+            // Fordere Kamera-Berechtigung NUR EINMAL an
+            requestCameraPermission()
+                .then(() => {
+                    initializePeer(myName);
+                })
+                .catch(err => {
+                    updateStatus('Kamera-Zugriff benötigt!', 'error');
+                });
         }
 
         function initializePeer(myName) {
@@ -975,31 +1019,31 @@
             const call = incomingCall;
             incomingCall = null;
             
-            try {
-                const stream = await startCamera();
+            // Zeige Video an
+            showVideo();
+            
+            // Beantworte mit bestehendem Stream
+            call.answer(myStream);
+            console.log('✓ Anruf beantwortet');
+            
+            call.on('stream', remoteStream => {
+                console.log('✓ Remote Stream empfangen');
+                addRemoteVideo(call.peer, remoteStream);
+                activeCalls.set(call.peer, call);
+                remoteStreams.set(call.peer, remoteStream);
                 
-                call.answer(stream);
-                
-                call.on('stream', remoteStream => {
-                    addRemoteVideo(call.peer, remoteStream);
-                    activeCalls.set(call.peer, call);
-                    remoteStreams.set(call.peer, remoteStream);
-                    
-                    const displayName = getContactDisplayName(call.peer);
-                    updateStatus('Verbunden mit ' + displayName + ' 🎉', 'success');
-                    document.getElementById('endCallSection').style.display = 'block';
-                });
+                const displayName = getContactDisplayName(call.peer);
+                updateStatus('Verbunden mit ' + displayName + ' 🎉', 'success');
+                document.getElementById('endCallSection').style.display = 'block';
+            });
 
-                call.on('close', () => {
-                    removeRemoteVideo(call.peer);
-                    activeCalls.delete(call.peer);
-                    remoteStreams.delete(call.peer);
-                    checkIfAllCallsEnded();
-                });
-            } catch (err) {
-                alert('Fehler beim Starten der Kamera!');
-                updateStatus('Kamera-Fehler', 'error');
-            }
+            call.on('close', () => {
+                console.log('Anruf geschlossen');
+                removeRemoteVideo(call.peer);
+                activeCalls.delete(call.peer);
+                remoteStreams.delete(call.peer);
+                checkIfAllCallsEnded();
+            });
         }
 
         function rejectCall() {
@@ -1020,45 +1064,50 @@
                 return;
             }
             
-            try {
-                const stream = await startCamera();
-                
-                const displayName = getContactDisplayName(contactId);
-                updateStatus('Rufe ' + displayName + ' an... 📞', 'info');
-                
-                const call = peer.call(contactId, stream);
-                
-                if (!call) {
-                    updateStatus('Fehler beim Anrufen', 'error');
-                    return;
-                }
-                
-                activeCalls.set(contactId, call);
-                
-                call.on('stream', remoteStream => {
-                    addRemoteVideo(contactId, remoteStream);
-                    remoteStreams.set(contactId, remoteStream);
-                    updateStatus('Verbunden mit ' + displayName + ' 🎉', 'success');
-                    document.getElementById('endCallSection').style.display = 'block';
-                });
-
-                call.on('error', err => {
-                    console.error('Call error:', err);
-                    updateStatus(displayName + ' ist nicht erreichbar', 'error');
-                    activeCalls.delete(contactId);
-                    removeRemoteVideo(contactId);
-                });
-
-                call.on('close', () => {
-                    removeRemoteVideo(contactId);
-                    activeCalls.delete(contactId);
-                    remoteStreams.delete(contactId);
-                    updateStatus(displayName + ' hat aufgelegt', 'info');
-                    checkIfAllCallsEnded();
-                });
-            } catch (err) {
-                alert('Fehler beim Starten der Kamera!');
+            if (!myStream) {
+                alert('Kamera nicht bereit!');
+                return;
             }
+            
+            // Zeige Video an
+            showVideo();
+            
+            const displayName = getContactDisplayName(contactId);
+            updateStatus('Rufe ' + displayName + ' an... 📞', 'info');
+            
+            const call = peer.call(contactId, myStream);
+            console.log('✓ Anruf gestartet');
+            
+            if (!call) {
+                updateStatus('Fehler beim Anrufen', 'error');
+                return;
+            }
+            
+            activeCalls.set(contactId, call);
+            
+            call.on('stream', remoteStream => {
+                console.log('✓ Remote Stream empfangen');
+                addRemoteVideo(contactId, remoteStream);
+                remoteStreams.set(contactId, remoteStream);
+                updateStatus('Verbunden mit ' + displayName + ' 🎉', 'success');
+                document.getElementById('endCallSection').style.display = 'block';
+            });
+
+            call.on('error', err => {
+                console.error('Call error:', err);
+                updateStatus(displayName + ' ist nicht erreichbar', 'error');
+                activeCalls.delete(contactId);
+                removeRemoteVideo(contactId);
+            });
+
+            call.on('close', () => {
+                console.log('Anruf geschlossen');
+                removeRemoteVideo(contactId);
+                activeCalls.delete(contactId);
+                remoteStreams.delete(contactId);
+                updateStatus(displayName + ' hat aufgelegt', 'info');
+                checkIfAllCallsEnded();
+            });
         }
 
         function startGroupCall() {
@@ -1096,14 +1145,23 @@
             video.autoplay = true;
             video.playsinline = true;
             video.srcObject = stream;
+            video.muted = false;
+            video.volume = 1.0;
             
             const label = document.createElement('div');
             label.className = 'video-label';
             label.textContent = displayName;
             
+            const audioIndicator = document.createElement('div');
+            audioIndicator.className = 'audio-indicator';
+            audioIndicator.textContent = '🔊';
+            
             videoCard.appendChild(video);
             videoCard.appendChild(label);
+            videoCard.appendChild(audioIndicator);
             grid.appendChild(videoCard);
+            
+            video.play().catch(err => console.error('Video play error:', err));
         }
 
         function removeRemoteVideo(peerId) {
@@ -1123,7 +1181,8 @@
             remoteStreams.clear();
             document.getElementById('endCallSection').style.display = 'none';
             
-            stopCamera();
+            // Verstecke Video (aber behalte Stream)
+            hideVideo();
             
             updateStatus('Anruf beendet', 'info');
         }
@@ -1131,7 +1190,7 @@
         function checkIfAllCallsEnded() {
             if (activeCalls.size === 0) {
                 document.getElementById('endCallSection').style.display = 'none';
-                stopCamera();
+                hideVideo();
                 updateStatus('Bereit für neue Anrufe 😊', 'success');
             }
         }
@@ -1149,7 +1208,7 @@
                     peer.disconnect();
                 }
                 
-                stopCamera();
+                hideVideo();
                 
                 document.getElementById('statusBtn').innerHTML = 'Online gehen ▶️';
                 updateOnlineBadge();

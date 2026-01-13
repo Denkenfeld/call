@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Video Chat">
+<title>📞 Video Chat Pro</title>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Comic Sans MS', Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    color: #333;
+    overscroll-behavior-y: contain;
+}
+.container { max-width: 800px; margin: 0 auto; padding: 15px; }
+
+/* Contact Grid */
+.contacts-section { background: white; padding: 15px; border-radius: 15px; margin-bottom: 15px; }
+.contact-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.contact-card {
+    background: #e5e7eb; border: 3px solid #9ca3af; border-radius: 12px;
+    padding: 10px; text-align: center; cursor: pointer; transition: all 0.3s;
+    min-height: 90px; display: flex; flex-direction: column; justify-content: center; align-items: center;
+    -webkit-tap-highlight-color: transparent;
+}
+.contact-card.me { background: #dbeafe; border-color: #3b82f6; cursor: default; }
+.contact-card.online { background: #d1fae5; border-color: #22c55e; }
+.contact-card.offline { background: #f3f4f6; opacity: 0.7; }
+.contact-card.calling { background: #fecaca; border-color: #ef4444; animation: pulse 1s infinite; }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+.contact-emoji { font-size: 2em; }
+.contact-name { font-size: 0.9em; font-weight: bold; word-break: break-all; }
+
+/* Video Section */
+.video-section { background: white; padding: 15px; border-radius: 15px; margin-bottom: 15px; }
+.video-grid { display: grid; gap: 10px; margin-bottom: 15px; }
+.video-box { background: #1a1a1a; border-radius: 12px; overflow: hidden; position: relative; aspect-ratio: 3/4; }
+.video-box video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+.video-label { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.6); color: white; padding: 4px 8px; border-radius: 6px; font-size: 0.8em; }
+
+/* Steuerung unter dem Video */
+.controls-row { display: flex; gap: 10px; margin-top: 10px; }
+.btn-control {
+    flex: 1; padding: 12px; border: none; border-radius: 10px;
+    font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    -webkit-tap-highlight-color: transparent; color: white;
+}
+.btn-refresh { background: #6b7280; } /* Grau */
+.btn-hangup { background: #ef4444; display: none; } /* Rot, nur im Call sichtbar */
+
+/* General Buttons */
+.btn-primary { width: 100%; padding: 15px; background: #3b82f6; color: white; border: none; border-radius: 10px; font-weight: bold; margin-top: 10px; }
+
+/* Overlays */
+.call-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 2000; justify-content: center; align-items: center; color: white; text-align: center; }
+.call-overlay.active { display: flex; }
+.call-btn { width: 70px; height: 70px; border-radius: 50%; border: none; font-size: 2em; margin: 0 15px; }
+.accept { background: #22c55e; } .reject { background: #ef4444; }
+
+.screen { display: none; } .screen.active { display: block; }
+
+@media (min-width: 768px) { .video-grid.two-videos { grid-template-columns: 1fr 1fr; } .video-box { aspect-ratio: 16/9; } }
+</style>
+</head>
+<body>
+
+<div class="screen active" id="setupScreen">
+    <div class="container">
+        <div style="background:white; padding:30px; border-radius:15px; text-align:center;">
+            <div style="font-size:4em;">👋</div>
+            <h1>Video Chat</h1>
+            <input type="text" id="setupMyName" placeholder="Dein Name" style="width:100%; padding:12px; margin:15px 0; border:2px solid #ddd; border-radius:8px;">
+            <button class="btn-primary" onclick="startApp()">Starten 🚀</button>
+        </div>
+    </div>
+</div>
+
+<div class="call-overlay" id="incomingCallOverlay">
+    <div>
+        <div id="incomingCallerName" style="font-size:2em; margin-bottom:20px;"></div>
+        <div style="margin-bottom:30px;">Ruft an...</div>
+        <button class="call-btn reject" onclick="rejectIncomingCall()">✗</button>
+        <button class="call-btn accept" onclick="acceptIncomingCall()">✓</button>
+    </div>
+</div>
+
+<div class="screen" id="mainScreen">
+    <div class="container">
+        <div class="contacts-section">
+            <div class="contact-grid" id="contactGrid">
+                <div class="contact-card me"><div class="contact-emoji">😊</div><div class="contact-name" id="myContactName">Ich</div></div>
+                <div class="contact-card offline" id="contact0" onclick="contactClick(0)"><div class="contact-emoji">😴</div><div class="contact-name">leer</div></div>
+                <div class="contact-card offline" id="contact1" onclick="contactClick(1)"><div class="contact-emoji">😴</div><div class="contact-name">leer</div></div>
+                <div class="contact-card offline" id="contact2" onclick="contactClick(2)"><div class="contact-emoji">😴</div><div class="contact-name">leer</div></div>
+            </div>
+        </div>
+
+        <div class="video-section">
+            <div class="video-grid" id="videoGrid">
+                <div class="video-box">
+                    <video id="myVideo" autoplay muted playsinline webkit-playsinline></video>
+                    <div class="video-label">Du</div>
+                </div>
+            </div>
+            
+            <div class="controls-row">
+                <button class="btn-control btn-refresh" onclick="location.reload()">
+                    🔄 App Refresh
+                </button>
+                <button id="hangupBtn" class="btn-control btn-hangup" onclick="endCall()">
+                    📞 Beenden
+                </button>
+            </div>
+        </div>
+
+        <button class="btn-primary" onclick="alert('In den Einstellungen (Safari) Namen ändern oder Seite neu laden!')">Namen ändern? ⚙️</button>
+    </div>
+</div>
+
+<script>
+let peer, myStream, myName;
+let contacts = ['Freund1', 'Freund2', 'Freund3']; // Hier deine Namen eintragen oder via Prompt laden
+let contactsOnline = [false, false, false];
+let currentCall = null;
+let callState = 'idle';
+
+function log(m) { console.log('[LOG]', m); }
+
+async function startApp() {
+    myName = document.getElementById('setupMyName').value.trim();
+    if(!myName) return alert("Name fehlt");
+    
+    try {
+        myStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'user' }, 
+            audio: true 
+        });
+        document.getElementById('myVideo').srcObject = myStream;
+        
+        peer = new Peer(myName);
+        peer.on('open', (id) => {
+            log('Online als: ' + id);
+            document.getElementById('setupScreen').classList.remove('active');
+            document.getElementById('mainScreen').classList.add('active');
+            document.getElementById('myContactName').textContent = myName;
+            setInterval(checkOnline, 5000);
+        });
+        
+        peer.on('call', handleIncomingCall);
+    } catch(e) { alert("Kamera-Fehler"); }
+}
+
+function checkOnline() {
+    contacts.forEach((name, i) => {
+        if(!name) return;
+        const conn = peer.connect(name, { reliable: false });
+        conn.on('open', () => { 
+            updateContactUI(i, true); 
+            conn.close(); 
+        });
+        setTimeout(() => { if(!conn.open) updateContactUI(i, false); }, 2000);
+    });
+}
+
+function updateContactUI(i, isOnline) {
+    const el = document.getElementById('contact' + i);
+    const nameEl = el.querySelector('.contact-name');
+    nameEl.textContent = contacts[i];
+    el.className = isOnline ? 'contact-card online' : 'contact-card offline';
+}
+
+function contactClick(i) {
+    if(callState !== 'idle') return;
+    callState = 'calling';
+    const target = contacts[i];
+    log('Rufe an: ' + target);
+    
+    currentCall = peer.call(target, myStream);
+    setupCallEvents(currentCall);
+}
+
+function handleIncomingCall(call) {
+    if(callState !== 'idle') return call.answer(); 
+    callState = 'incoming';
+    currentCall = call;
+    document.getElementById('incomingCallerName').textContent = call.peer;
+    document.getElementById('incomingCallOverlay').classList.add('active');
+}
+
+function acceptIncomingCall() {
+    document.getElementById('incomingCallOverlay').classList.remove('active');
+    currentCall.answer(myStream);
+    setupCallEvents(currentCall);
+}
+
+function setupCallEvents(call) {
+    callState = 'connected';
+    document.getElementById('hangupBtn').style.display = 'flex'; // Beenden Button zeigen
+    
+    call.on('stream', (remoteStream) => {
+        if(document.getElementById('remoteVideo')) return;
+        addRemoteVideo(call.peer, remoteStream);
+    });
+    call.on('close', endCall);
+}
+
+function addRemoteVideo(name, stream) {
+    const grid = document.getElementById('videoGrid');
+    grid.classList.add('two-videos');
+    const box = document.createElement('div');
+    box.className = 'video-box';
+    box.id = 'remoteVideo';
+    const video = document.createElement('video');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    video.playsInline = true;
+    video.autoplay = true;
+    video.muted = true; // Wichtig für iOS!
+    video.srcObject = stream;
+    
+    // Separates Audio
+    const audio = document.createElement('audio');
+    audio.autoplay = true;
+    audio.srcObject = stream;
+    document.body.appendChild(audio);
+    
+    box.innerHTML = `<div class="video-label">${name}</div>`;
+    box.appendChild(video);
+    grid.appendChild(box);
+    video.play();
+}
+
+function endCall() {
+    if(currentCall) currentCall.close();
+    location.reload(); // Radikalster Refresh für Stabilität
+}
+
+function rejectIncomingCall() {
+    document.getElementById('incomingCallOverlay').classList.remove('active');
+    if(currentCall) currentCall.close();
+    callState = 'idle';
+}
+</script>
+</body>
+</html>

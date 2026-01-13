@@ -519,15 +519,44 @@
         let onlineCheckInterval = null;
         let isInBackground = false;
         let notificationPermissionGranted = false;
-        let activeNotification = null;
+        let silentAudioContext = null;
 
         function log(msg) {
             console.log('[VIDEO-CHAT]', msg);
         }
 
+        // STILLES AUDIO IM HINTERGRUND (für iOS Notifications)
+        function createSilentAudio() {
+            if (silentAudioContext) return;
+            
+            try {
+                silentAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = silentAudioContext.createOscillator();
+                const gainNode = silentAudioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(silentAudioContext.destination);
+                oscillator.frequency.value = 20000; // Unhörbar für Menschen
+                gainNode.gain.value = 0.001; // Sehr leise
+                oscillator.start();
+                
+                log('✓ Silent Audio aktiv (für Hintergrund-Notifications)');
+            } catch (e) {
+                log('Silent Audio Error: ' + e);
+            }
+        }
+
+        function stopSilentAudio() {
+            if (silentAudioContext) {
+                try {
+                    silentAudioContext.close();
+                } catch(e) {}
+                silentAudioContext = null;
+            }
+        }
+
         // AUTOMATISCHE HINTERGRUND-ERKENNUNG
         function setupBackgroundDetection() {
-            // Visibility Change (Tab-Switch, Home-Button)
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     log('📱 App in Hintergrund');
@@ -538,27 +567,25 @@
                 }
             });
 
-            // Page Hide (zusätzlicher Event für iOS)
             window.addEventListener('pagehide', () => {
-                log('📱 Page Hide - App in Hintergrund');
+                log('📱 Page Hide');
                 handleAppGoingBackground();
             });
 
-            // Page Show
             window.addEventListener('pageshow', () => {
-                log('👁️ Page Show - App im Vordergrund');
+                log('👁️ Page Show');
                 handleAppComingForeground();
             });
 
-            // Blur (Fokus verloren)
             window.addEventListener('blur', () => {
-                log('📱 Window Blur');
-                handleAppGoingBackground();
+                setTimeout(() => {
+                    if (document.hidden) {
+                        handleAppGoingBackground();
+                    }
+                }, 100);
             });
 
-            // Focus (Fokus zurück)
             window.addEventListener('focus', () => {
-                log('👁️ Window Focus');
                 handleAppComingForeground();
             });
 
@@ -566,43 +593,54 @@
         }
 
         function handleAppGoingBackground() {
-            if (isInBackground) return; // Bereits im Hintergrund
+            if (isInBackground) return;
             
             isInBackground = true;
             log('→ App läuft jetzt im Hintergrund');
             
-            // NICHT im Call: Kamera/Mikro ausschalten (spart Akku)
+            // WICHTIG: Tracks STOPPEN (nicht nur disabled) um orangenes Symbol zu entfernen
             if (callState === CALL_STATE.IDLE && myStream) {
                 myStream.getTracks().forEach(track => {
-                    track.enabled = false;
+                    track.stop();
                 });
-                log('✓ Kamera/Mikro pausiert (Akku sparen)');
+                myStream = null;
+                log('✓ Kamera/Mikro GESTOPPT (kein orangenes Symbol mehr)');
             }
             
-            // Bei aktivem Call: NICHT pausieren, Call läuft weiter
-            if (callState === CALL_STATE.CONNECTED) {
-                log('ℹ️ Call läuft weiter im Hintergrund');
-            }
+            // Silent Audio für Notifications
+            createSilentAudio();
         }
 
-        function handleAppComingForeground() {
-            if (!isInBackground) return; // Bereits im Vordergrund
+        async function handleAppComingForeground() {
+            if (!isInBackground) return;
             
             isInBackground = false;
             log('→ App wieder im Vordergrund');
             
-            // Kamera/Mikro wieder aktivieren
-            if (myStream) {
-                myStream.getTracks().forEach(track => {
-                    track.enabled = true;
-                });
-                log('✓ Kamera/Mikro wieder aktiv');
-            }
+            stopSilentAudio();
             
-            // Notification schließen
-            if (activeNotification) {
-                activeNotification.close();
-                activeNotification = null;
+            // Stream neu erstellen wenn nötig
+            if (!myStream && callState === CALL_STATE.IDLE) {
+                try {
+                    myStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    });
+                    
+                    const myVideo = document.getElementById('myVideo');
+                    if (myVideo) {
+                        myVideo.srcObject = myStream;
+                        myVideo.play().catch(() => {});
+                    }
+                    
+                    log('✓ Kamera/Mikro wieder aktiv');
+                } catch (err) {
+                    log('Fehler beim Reaktivieren: ' + err.message);
+                }
             }
         }
 
@@ -630,24 +668,31 @@
         }
 
         function showNotification(title, body) {
-            if (!notificationPermissionGranted) return;
+            // Notification NUR wenn Tab hidden ist
+            if (!document.hidden) {
+                log('Tab sichtbar - keine Notification nötig');
+                return;
+            }
+            
+            if (!notificationPermissionGranted) {
+                log('Keine Notification Permission');
+                return;
+            }
             
             try {
-                if (activeNotification) {
-                    activeNotification.close();
-                }
-                
-                activeNotification = new Notification(title, {
+                const notification = new Notification(title, {
                     body: body,
                     icon: '📞',
+                    badge: '📞',
                     tag: 'videochat-call',
                     requireInteraction: true,
-                    vibrate: [200, 100, 200, 100, 200]
+                    vibrate: [300, 200, 300, 200, 300],
+                    silent: false
                 });
                 
-                activeNotification.onclick = () => {
+                notification.onclick = () => {
                     window.focus();
-                    activeNotification.close();
+                    notification.close();
                 };
                 
                 log('✓ Notification angezeigt');
@@ -658,7 +703,7 @@
 
         // State Reset
         function fullStateReset() {
-            log('🧹 Vollständiger State-Reset');
+            log('🧹 State-Reset');
             
             if (currentCall) {
                 try { currentCall.close(); } catch(e) {}
@@ -679,7 +724,6 @@
             activeContactIndex = -1;
             
             updateUI();
-            log('✓ State reset');
         }
 
         // Online Check
@@ -804,15 +848,20 @@
         }
 
         function hideAllOverlays() {
+            // SYNCHRON verstecken für Safari
             const incoming = document.getElementById('incomingCallOverlay');
             const outgoing = document.getElementById('outgoingCallOverlay');
             
-            if (incoming) incoming.classList.remove('active');
-            if (outgoing) outgoing.classList.remove('active');
+            if (incoming) {
+                incoming.style.display = 'none';
+                incoming.classList.remove('active');
+            }
+            if (outgoing) {
+                outgoing.style.display = 'none';
+                outgoing.classList.remove('active');
+            }
             
-            // Force repaint für Safari
-            if (incoming) incoming.offsetHeight;
-            if (outgoing) outgoing.offsetHeight;
+            log('✓ Overlays versteckt');
         }
 
         window.addEventListener('load', () => {
@@ -844,11 +893,7 @@
                 myVideo.play().catch(e => log('MyVideo play: ' + e));
                 
                 initializePeer();
-                
-                // Notification Permission
                 await requestNotificationPermission();
-                
-                // Hintergrund-Erkennung aktivieren
                 setupBackgroundDetection();
                 
                 document.getElementById('setupScreen').classList.remove('active');
@@ -885,11 +930,7 @@
                 myVideo.play().catch(e => log('MyVideo play: ' + e));
                 
                 initializePeer();
-                
-                // Notification Permission
                 await requestNotificationPermission();
-                
-                // Hintergrund-Erkennung aktivieren
                 setupBackgroundDetection();
                 
                 document.getElementById('setupScreen').classList.remove('active');
@@ -982,7 +1023,9 @@
             activeContactIndex = index;
             
             document.getElementById('outgoingCallerName').textContent = contactName;
-            document.getElementById('outgoingCallOverlay').classList.add('active');
+            const overlay = document.getElementById('outgoingCallOverlay');
+            overlay.style.display = 'flex';
+            overlay.classList.add('active');
             
             currentCall = peer.call(contactName, myStream);
             
@@ -993,28 +1036,24 @@
             }
             
             currentCall.on('stream', (remoteStream) => {
-                log('✓ Stream empfangen - SOFORT Overlay weg!');
+                log('✓ Stream empfangen');
                 
-                // KRITISCH: Overlay SOFORT verstecken
+                // SOFORT SYNCHRON Overlay weg
                 hideAllOverlays();
                 
                 callState = CALL_STATE.CONNECTED;
                 updateUI();
                 
-                // Video etwas später hinzufügen
-                setTimeout(() => {
-                    addRemoteVideo(contactName, remoteStream);
-                }, 50);
+                // Video sofort hinzufügen (kein Delay mehr)
+                addRemoteVideo(contactName, remoteStream);
             });
 
             currentCall.on('close', () => {
-                log('Call close event');
                 endCall();
             });
 
             currentCall.on('error', (err) => {
                 log('Call error: ' + err);
-                alert('Anruf-Fehler!');
                 fullStateReset();
             });
             
@@ -1027,11 +1066,10 @@
         }
 
         function cancelOutgoingCall() {
-            log('Abbruch ausgehender Anruf');
             fullStateReset();
         }
 
-        function handleIncomingCall(call) {
+        async function handleIncomingCall(call) {
             const contactIndex = contacts.indexOf(call.peer);
             if (contactIndex === -1) {
                 log('⚠ Unbekannter Anruf blockiert');
@@ -1043,17 +1081,37 @@
                 return;
             }
             
-            // Notification wenn im Hintergrund
-            if (isInBackground) {
-                showNotification('📞 Eingehender Anruf!', 'Von: ' + call.peer);
+            // Stream erstellen wenn nötig (wenn im Hintergrund war)
+            if (!myStream) {
+                try {
+                    myStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    });
+                    const myVideo = document.getElementById('myVideo');
+                    if (myVideo) {
+                        myVideo.srcObject = myStream;
+                    }
+                } catch (err) {
+                    log('Stream-Fehler bei Incoming Call: ' + err);
+                }
             }
+            
+            // Notification im Hintergrund
+            showNotification('📞 Eingehender Anruf!', 'Von: ' + call.peer);
             
             callState = CALL_STATE.INCOMING;
             activeContactIndex = contactIndex;
             incomingCallObject = call;
             
             document.getElementById('incomingCallerName').textContent = call.peer;
-            document.getElementById('incomingCallOverlay').classList.add('active');
+            const overlay = document.getElementById('incomingCallOverlay');
+            overlay.style.display = 'flex';
+            overlay.classList.add('active');
             
             playRingtone();
             
@@ -1081,38 +1139,25 @@
             updateUI();
             
             currentCall.on('stream', (remoteStream) => {
-                log('✓ Remote Stream empfangen');
-                setTimeout(() => {
-                    addRemoteVideo(currentCall.peer, remoteStream);
-                }, 50);
+                log('✓ Remote Stream');
+                addRemoteVideo(currentCall.peer, remoteStream);
             });
 
             currentCall.on('close', () => {
-                log('Call close event');
-                endCall();
-            });
-
-            currentCall.on('error', (err) => {
-                log('Call error: ' + err);
                 endCall();
             });
         }
 
         function rejectIncomingCall() {
-            log('Lehne Anruf ab');
             fullStateReset();
         }
 
         function endCall() {
-            log('Beende Anruf');
             fullStateReset();
-            
-            setTimeout(() => {
-                checkAllContactsOnline();
-            }, 1000);
+            setTimeout(() => checkAllContactsOnline(), 1000);
         }
 
-        // Video mit Safari-Fix
+        // Video
         function addRemoteVideo(name, stream) {
             log('Füge Video hinzu: ' + name);
             removeRemoteVideo();
@@ -1129,9 +1174,9 @@
             video.autoplay = true;
             video.playsinline = true;
             video.setAttribute('webkit-playsinline', '');
-            video.setAttribute('x-webkit-airplay', 'allow');
             video.muted = false;
             video.volume = 1.0;
+            video.srcObject = stream;
             
             const label = document.createElement('div');
             label.className = 'video-label';
@@ -1141,20 +1186,14 @@
             box.appendChild(label);
             grid.appendChild(box);
             
-            // WICHTIG: Erst DOM, dann Stream
-            setTimeout(() => {
-                video.srcObject = stream;
-                remoteVideoElement = video;
-                
-                createAudioElement(stream);
-                
-                // Aggressive Play-Versuche
-                video.play().catch(() => {});
-                setTimeout(() => video.play().catch(() => {}), 100);
-                setTimeout(() => video.play().catch(() => {}), 300);
-                
-                log('✓ Video hinzugefügt');
-            }, 50);
+            remoteVideoElement = video;
+            createAudioElement(stream);
+            
+            // Sofort abspielen
+            video.play().catch(() => {});
+            setTimeout(() => video.play().catch(() => {}), 100);
+            
+            log('✓ Video hinzugefügt');
         }
 
         function createAudioElement(stream) {
@@ -1165,9 +1204,7 @@
             remoteAudioElement.srcObject = stream;
             remoteAudioElement.volume = 1.0;
             document.body.appendChild(remoteAudioElement);
-            
             remoteAudioElement.play().catch(() => {});
-            setTimeout(() => remoteAudioElement.play().catch(() => {}), 100);
         }
 
         function destroyAudioElement() {
@@ -1194,12 +1231,9 @@
                     } catch(e) {}
                 }
                 remote.remove();
-                log('Remote-Video entfernt');
             }
             remoteVideoElement = null;
-            
-            const grid = document.getElementById('videoGrid');
-            grid.classList.remove('two-videos');
+            document.getElementById('videoGrid').classList.remove('two-videos');
         }
 
         // Edit Modal
@@ -1245,6 +1279,7 @@
         // Cleanup
         window.addEventListener('beforeunload', () => {
             stopOnlineCheck();
+            stopSilentAudio();
             if (myStream) {
                 myStream.getTracks().forEach(track => track.stop());
             }

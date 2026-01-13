@@ -878,7 +878,7 @@ function cancelOutgoingCall() { fullStateReset(); }
 
 async function handleIncomingCall(call) {
     const contactIndex = contacts.indexOf(call.peer);
-    if (contactIndex === -1 && callState !== CALL_STATE.IDLE) return;
+    if (contactIndex === -1) return;
     
     if (!myStream) {
         try { await getMyStream(); } catch (err) { log('Stream Error Incoming: ' + err); }

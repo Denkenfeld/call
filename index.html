@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Video Chat">
     <title>📞 Video Chat</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
@@ -147,6 +150,45 @@
             z-index: 50;
         }
         
+        /* Minimized State */
+        .minimized-view {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #000;
+            z-index: 3000;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            color: white;
+            padding: 30px;
+        }
+        
+        .minimized-view.active {
+            display: flex;
+        }
+        
+        .minimized-view h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+        
+        .minimized-view p {
+            font-size: 1.5em;
+            margin: 15px 0;
+            line-height: 1.6;
+        }
+        
+        .minimized-view .emoji {
+            font-size: 5em;
+            margin: 30px 0;
+            animation: pulse 2s infinite;
+        }
+        
         /* Buttons */
         .btn {
             width: 100%;
@@ -163,6 +205,18 @@
         .btn-primary {
             background: linear-gradient(135deg, #60a5fa, #3b82f6);
             color: white;
+        }
+        
+        .btn-minimize {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: white;
+        }
+        
+        .btn-maximize {
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            color: white;
+            font-size: 1.3em;
+            padding: 20px;
         }
         
         /* Call Overlay */
@@ -370,6 +424,20 @@
         </div>
     </div>
 
+    <!-- Minimized View -->
+    <div class="minimized-view" id="minimizedView">
+        <div class="emoji">😴</div>
+        <h1>App läuft im Hintergrund</h1>
+        <p>Drücke jetzt den <strong>Home-Button</strong><br>oder wechsle zu einer anderen App</p>
+        <p style="font-size: 1.2em; color: #fbbf24; margin-top: 30px;">
+            ⚠️ Du bleibst erreichbar!<br>
+            Bei Anruf bekommst du eine Benachrichtigung
+        </p>
+        <button class="btn btn-maximize" onclick="maximizeApp()">
+            👁️ App wieder öffnen
+        </button>
+    </div>
+
     <!-- Incoming Call Overlay -->
     <div class="call-overlay" id="incomingCallOverlay">
         <div class="call-dialog">
@@ -445,6 +513,11 @@
                 </div>
             </div>
 
+            <!-- Minimize Button -->
+            <button class="btn btn-minimize" onclick="minimizeApp()" id="minimizeBtn">
+                App minimieren 😴
+            </button>
+
             <!-- Edit Button -->
             <button class="btn btn-primary" onclick="openEditModal()">Kontakte bearbeiten ✏️</button>
         </div>
@@ -514,49 +587,137 @@
         let ringtoneAudio = null;
         let remoteVideoElement = null;
         let onlineCheckInterval = null;
+        let isMinimized = false;
+        let notificationPermissionGranted = false;
+        let activeNotification = null;
 
         function log(msg) {
             console.log('[VIDEO-CHAT]', msg);
         }
 
-        // KOMPLETT SAUBERER STATE RESET
+        // Notifications
+        async function requestNotificationPermission() {
+            if (!('Notification' in window)) {
+                log('Browser unterstützt keine Notifications');
+                return false;
+            }
+            
+            if (Notification.permission === 'granted') {
+                notificationPermissionGranted = true;
+                log('✓ Notification Permission');
+                return true;
+            }
+            
+            if (Notification.permission !== 'denied') {
+                const permission = await Notification.requestPermission();
+                notificationPermissionGranted = permission === 'granted';
+                log('Notification Permission: ' + permission);
+                return notificationPermissionGranted;
+            }
+            
+            return false;
+        }
+
+        function showNotification(title, body) {
+            if (!notificationPermissionGranted) return;
+            
+            try {
+                if (activeNotification) {
+                    activeNotification.close();
+                }
+                
+                activeNotification = new Notification(title, {
+                    body: body,
+                    icon: '📞',
+                    tag: 'videochat-call',
+                    requireInteraction: true,
+                    vibrate: [200, 100, 200, 100, 200]
+                });
+                
+                activeNotification.onclick = () => {
+                    window.focus();
+                    maximizeApp();
+                    activeNotification.close();
+                };
+                
+                log('✓ Notification angezeigt');
+            } catch (e) {
+                log('Notification Error: ' + e);
+            }
+        }
+
+        // Minimize/Maximize
+        function minimizeApp() {
+            if (callState === CALL_STATE.CONNECTED) {
+                alert('Beende erst den Anruf!');
+                return;
+            }
+            
+            log('App minimieren...');
+            isMinimized = true;
+            
+            // Kamera/Mikro ausschalten
+            if (myStream) {
+                myStream.getTracks().forEach(track => {
+                    track.enabled = false;
+                });
+            }
+            
+            // Zeige Minimized View
+            document.getElementById('minimizedView').classList.add('active');
+            
+            log('✓ App minimiert - User soll jetzt Home-Button drücken');
+        }
+
+        function maximizeApp() {
+            log('App maximieren...');
+            isMinimized = false;
+            
+            // Kamera/Mikro wieder an
+            if (myStream) {
+                myStream.getTracks().forEach(track => {
+                    track.enabled = true;
+                });
+            }
+            
+            // Verstecke Minimized View
+            document.getElementById('minimizedView').classList.remove('active');
+            
+            if (activeNotification) {
+                activeNotification.close();
+                activeNotification = null;
+            }
+            
+            log('✓ App wieder aktiv');
+        }
+
+        // State Reset
         function fullStateReset() {
             log('🧹 Vollständiger State-Reset');
             
-            // Call Objects
             if (currentCall) {
-                try {
-                    currentCall.close();
-                } catch(e) {}
+                try { currentCall.close(); } catch(e) {}
                 currentCall = null;
             }
             
             if (incomingCallObject) {
-                try {
-                    incomingCallObject.close();
-                } catch(e) {}
+                try { incomingCallObject.close(); } catch(e) {}
                 incomingCallObject = null;
             }
             
-            // Audio/Video cleanup
             removeRemoteVideo();
             destroyAudioElement();
             stopRingtone();
-            
-            // UI cleanup
             hideAllOverlays();
             
-            // State reset
             callState = CALL_STATE.IDLE;
             activeContactIndex = -1;
             
-            // UI refresh
             updateUI();
-            
-            log('✓ State komplett zurückgesetzt');
+            log('✓ State reset');
         }
 
-        // Online Status Check
+        // Online Check
         function checkContactOnline(contactName, index) {
             if (!contactName || contactName.trim() === '' || !peer) {
                 contactsOnlineStatus[index] = false;
@@ -678,8 +839,16 @@
         }
 
         function hideAllOverlays() {
-            document.getElementById('incomingCallOverlay').classList.remove('active');
-            document.getElementById('outgoingCallOverlay').classList.remove('active');
+            // WICHTIG: Overlay sofort verstecken
+            const incoming = document.getElementById('incomingCallOverlay');
+            const outgoing = document.getElementById('outgoingCallOverlay');
+            
+            if (incoming) incoming.classList.remove('active');
+            if (outgoing) outgoing.classList.remove('active');
+            
+            // Force repaint für Safari
+            incoming.offsetHeight;
+            outgoing.offsetHeight;
         }
 
         window.addEventListener('load', () => {
@@ -711,6 +880,9 @@
                 myVideo.play().catch(e => log('MyVideo play: ' + e));
                 
                 initializePeer();
+                
+                // Notification Permission
+                await requestNotificationPermission();
                 
                 document.getElementById('setupScreen').classList.remove('active');
                 document.getElementById('mainScreen').classList.add('active');
@@ -746,6 +918,9 @@
                 myVideo.play().catch(e => log('MyVideo play: ' + e));
                 
                 initializePeer();
+                
+                // Notification Permission
+                await requestNotificationPermission();
                 
                 document.getElementById('setupScreen').classList.remove('active');
                 document.getElementById('mainScreen').classList.add('active');
@@ -818,6 +993,11 @@
                 return;
             }
             
+            // Wenn minimiert, erst maximieren
+            if (isMinimized) {
+                maximizeApp();
+            }
+            
             if (!contactsOnlineStatus[index] && callState !== CALL_STATE.CONNECTED) {
                 alert('Dieser Kontakt ist gerade nicht online!');
                 return;
@@ -848,14 +1028,18 @@
             }
             
             currentCall.on('stream', (remoteStream) => {
-                log('✓ Verbunden!');
+                log('✓ Stream empfangen - SOFORT Overlay weg!');
+                
+                // KRITISCH: Overlay SOFORT verstecken
                 hideAllOverlays();
+                
                 callState = CALL_STATE.CONNECTED;
                 updateUI();
                 
+                // Video etwas später hinzufügen
                 setTimeout(() => {
                     addRemoteVideo(contactName, remoteStream);
-                }, 150);
+                }, 50);
             });
 
             currentCall.on('close', () => {
@@ -894,6 +1078,12 @@
                 return;
             }
             
+            // Wenn minimiert, automatisch maximieren + Notification
+            if (isMinimized) {
+                maximizeApp();
+                showNotification('📞 Eingehender Anruf!', 'Von: ' + call.peer);
+            }
+            
             callState = CALL_STATE.INCOMING;
             activeContactIndex = contactIndex;
             incomingCallObject = call;
@@ -930,7 +1120,7 @@
                 log('✓ Remote Stream empfangen');
                 setTimeout(() => {
                     addRemoteVideo(currentCall.peer, remoteStream);
-                }, 150);
+                }, 50);
             });
 
             currentCall.on('close', () => {
@@ -953,7 +1143,6 @@
             log('Beende Anruf');
             fullStateReset();
             
-            // Online-Status neu checken nach Anruf
             setTimeout(() => {
                 checkAllContactsOnline();
             }, 1000);
@@ -962,8 +1151,6 @@
         // Video mit Safari-Fix
         function addRemoteVideo(name, stream) {
             log('Füge Video hinzu: ' + name);
-            
-            // Entferne altes Video komplett
             removeRemoteVideo();
             
             const grid = document.getElementById('videoGrid');
@@ -990,19 +1177,17 @@
             box.appendChild(label);
             grid.appendChild(box);
             
-            // WICHTIG: Erst in DOM, dann Stream setzen
+            // WICHTIG: Erst DOM, dann Stream
             setTimeout(() => {
                 video.srcObject = stream;
                 remoteVideoElement = video;
                 
-                // Backup Audio Element
                 createAudioElement(stream);
                 
                 // Aggressive Play-Versuche
                 video.play().catch(() => {});
                 setTimeout(() => video.play().catch(() => {}), 100);
                 setTimeout(() => video.play().catch(() => {}), 300);
-                setTimeout(() => video.play().catch(() => {}), 600);
                 
                 log('✓ Video hinzugefügt');
             }, 50);
@@ -1015,8 +1200,6 @@
             remoteAudioElement.autoplay = true;
             remoteAudioElement.srcObject = stream;
             remoteAudioElement.volume = 1.0;
-            
-            // Append to body für besseres Safari-Verhalten
             document.body.appendChild(remoteAudioElement);
             
             remoteAudioElement.play().catch(() => {});
@@ -1039,7 +1222,6 @@
         function removeRemoteVideo() {
             const remote = document.getElementById('remoteVideo');
             if (remote) {
-                // Video Element cleanup
                 const video = remote.querySelector('video');
                 if (video) {
                     try {
